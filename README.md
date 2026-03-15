@@ -364,8 +364,8 @@ This software is provided without warranty. See the AGPL-3.0 license text for fu
 
 If Vaultik is useful to you, consider supporting development:
 
-<a href="https://buymeacoffee.com/kinandev"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee"></a>
-<a href="https://ko-fi.com/kinandev"><img src="https://img.shields.io/badge/Ko--fi-13C3FF?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
-<a href="https://patreon.com/kinandev"><img src="https://img.shields.io/badge/Patreon-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
+<a href="https://buymeacoffee.com/swovo"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee"></a>
+<a href="https://ko-fi.com/swovo"><img src="https://img.shields.io/badge/Ko--fi-13C3FF?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
+<a href="https://patreon.com/swovo"><img src="https://img.shields.io/badge/Patreon-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
 
 Patreon supporters can request individual features and vote on the roadmap.
