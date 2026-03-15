@@ -48,6 +48,308 @@ Vaultik wraps the `restic` CLI. It spawns restic with `--json` and parses the st
 - Upgrade restic independently of Vaultik
 - No data ever passes through Vaultik's servers — there are no servers
 
+---
+
+## Getting Started
+
+### 1. Install restic
+
+Vaultik requires `restic` installed on your system.
+
+```bash
+# Debian / Ubuntu
+sudo apt install restic
+
+# Fedora
+sudo dnf install restic
+
+# Arch
+sudo pacman -S restic
+
+# macOS
+brew install restic
+
+# Windows (scoop)
+scoop install restic
+```
+
+Verify it works:
+
+```bash
+restic version
+```
+
+### 2. Install Vaultik
+
+Download the latest release for your platform from [Releases](https://github.com/kinan9011/Vaultik/releases), or build from source (see [Building](#building) below).
+
+### 3. First Backup (Setup Wizard)
+
+When you launch Vaultik with no profiles, the Dashboard shows two options: **Setup Wizard** and **Manual Setup**. The wizard walks you through everything in 6 steps:
+
+1. **What to back up** — name your profile, add source directories
+2. **Where to store it** — pick a backend (local, SFTP, S3, B2, REST, etc.) and enter the repo URL
+3. **Security** — set an encryption password (stored in your OS keyring)
+4. **Schedule** — optionally enable automatic backups (hourly, daily, weekly)
+5. **Retention** — choose a cleanup preset (conservative, moderate, or minimal)
+6. **Review & Create** — confirm settings, then Vaultik initializes the repo and starts your first backup
+
+The whole process takes under 3 minutes.
+
+---
+
+## User Guide
+
+### Dashboard
+
+The Dashboard is the home screen. It shows:
+
+- **Health summary** — counts of healthy, failed, and never-run profiles
+- **Active backup progress** — when a backup is running, a live progress bar shows percentage, files processed, data transferred, ETA, current file, and error count. You can cancel at any time.
+- **Profile cards** — each profile displays its status dot, name, repo URL, source count, schedule status, and last run time. Actions per card:
+  - **Pause / Resume** — temporarily stop scheduled backups without deleting the profile
+  - **Snapshots** — jump to the snapshot browser
+  - **Run Now** — start an immediate backup
+
+Status dots indicate health at a glance:
+- Green = last backup succeeded
+- Yellow = completed with warnings
+- Red = last backup failed
+- Gray = never run
+- Dimmed = paused
+
+### Backup Profiles
+
+Each profile is an independent backup configuration. Click a profile name on the Dashboard to edit it. Profiles contain:
+
+**General** — profile name
+
+**Execution Mode** — where restic runs:
+- **Local** (default) — restic runs on this machine
+- **Remote (SSH)** — restic runs on a remote server via SSH. Configure the SSH host, port, identity key, and remote restic path. Use "Test SSH Connection" to verify connectivity and that restic is available on the server.
+
+**Repository** — the storage backend URL and encryption password. Supported formats:
+| Backend | URL format |
+|---------|-----------|
+| Local / USB | `/mnt/backup/repo` |
+| SFTP | `sftp:user@host:/backup/repo` |
+| S3 / MinIO | `s3:s3.amazonaws.com/bucket-name` |
+| Backblaze B2 | `b2:bucket-name:prefix` |
+| Azure | `azure:container-name:prefix` |
+| Google Cloud | `gs:bucket-name:/prefix` |
+| Swift | `swift:container-name:/prefix` |
+| rclone | `rclone:remote:path` |
+| REST Server | `rest:http://host:8000/` |
+
+Use "Test Connection" to verify access. For new repos, use "Init New Repo" to create the repository structure.
+
+**Backup Sources** — list of directories to back up. Add paths one at a time.
+
+**Exclusions** — glob patterns to skip (e.g., `*.tmp`, `node_modules`, `.cache`). Options:
+- Exclude cache directories (CACHEDIR.TAG)
+- Stay on one filesystem
+
+**Retention Policy** — how many snapshots to keep per time interval:
+| Field | Meaning |
+|-------|---------|
+| Keep Last | keep the N most recent snapshots |
+| Keep Hourly | keep one snapshot per hour for the last N hours |
+| Keep Daily | keep one per day for N days |
+| Keep Weekly | keep one per week for N weeks |
+| Keep Monthly | keep one per month for N months |
+| Keep Yearly | keep one per year for N years |
+
+Enable "Auto-prune after forget" to reclaim disk space automatically.
+
+**Schedule** — enable automatic backups with a frequency (hourly, daily, weekly, or custom cron). Vaultik installs OS-native timers:
+- **Linux**: systemd user timers (`~/.config/systemd/user/`)
+- **macOS**: launchd agents (`~/Library/LaunchAgents/`)
+- **Windows**: Task Scheduler
+
+You can toggle success and failure notifications per schedule.
+
+**Health Checks** — optionally run `restic check` after every backup. Set a data subset (e.g., `5%` or `1/10`) to check a random sample instead of all data.
+
+**Advanced** — compression level, upload/download speed limits, read concurrency, tags, and hostname override.
+
+### Snapshot Browser
+
+Navigate to **Snapshots** from a profile card on the Dashboard.
+
+**Left panel** — lists all snapshots (newest first). Each shows the short ID, timestamp, paths, hostname, and a file/size summary. Click a snapshot to browse its contents. Click "forget" to remove a snapshot from the repository.
+
+**Right panel** — file tree with expand/collapse. Shows name, type, size, and modification date. Select individual files or folders using checkboxes, then:
+- **Restore Selected** — restore only checked items
+- **Restore All** — restore the entire snapshot
+
+The restore dialog lets you:
+1. Choose a target directory
+2. Optionally verify files after restore
+3. Monitor progress with a live progress bar
+4. Cancel mid-restore if needed
+
+### Run History
+
+The **Run History** page logs every operation (backup, restore, check, forget). Filter by profile using the dropdown.
+
+Each entry shows:
+- Status badge (success, partial, failed, running)
+- Operation type and trigger (manual vs. scheduled)
+- Duration and timestamps
+- Expand to see: snapshot ID, file counts (new/changed/unchanged), data added, total duration, and any errors
+
+### Settings
+
+**Appearance** — toggle between light and dark theme (follows system preference by default).
+
+**Restic Binary** — shows the detected restic version. Optionally set a custom path if restic is not on your PATH.
+
+**Data Management**:
+- **Export Profiles** — save all profiles to a JSON file for backup or migration. Passwords are not included.
+- **Import Profiles** — load profiles from a previously exported file. Duplicates (same name) are skipped.
+
+### Remote SSH Execution
+
+Vaultik can run restic on a remote server over SSH. This is useful when:
+- Your data lives on the server and you want to back it up without transferring it to your local machine
+- The repository is local to the server (faster access)
+- You manage backups for multiple servers from one desktop
+
+**Setup:**
+1. Edit a profile and set Execution Mode to "Remote server (SSH)"
+2. Enter the SSH host (e.g., `user@192.168.1.10` or a hostname from `~/.ssh/config`)
+3. Optionally set the port, identity key, and remote restic path
+4. Click "Test SSH Connection" to verify
+
+**Requirements:**
+- SSH key-based authentication must be configured (Vaultik uses `BatchMode=yes` and will not prompt for passwords)
+- `restic` must be installed on the remote server
+- The remote user needs read access to the backup sources
+
+All operations (backup, restore, check, snapshots, forget) work identically whether local or remote. The Dashboard shows a "remote" badge on remote profiles.
+
+### Password Storage
+
+Vaultik supports three ways to provide the repository encryption password:
+
+| Method | How it works | When to use |
+|--------|-------------|-------------|
+| **OS Keyring** (default) | Stored in libsecret (Linux), Keychain (macOS), or Credential Manager (Windows) | Recommended for most users |
+| **Password File** | Reads from a plaintext file at a given path | Headless/automated setups |
+| **Password Command** | Runs a shell command and uses its output | Integration with secret managers (Vault, pass, etc.) |
+
+### Notifications
+
+Vaultik sends desktop notifications after backups complete:
+- **Success**: profile name, new file count, data added
+- **Partial**: profile name, warning/error count
+- **Failure**: profile name, error message
+
+Notifications can be toggled per-profile in the schedule settings.
+
+### Data Storage
+
+| What | Where | Format |
+|------|-------|--------|
+| Profiles | `~/.config/vaultik/profiles/` | JSON (one file per profile) |
+| Run history | `~/.local/share/vaultik/history.db` | SQLite |
+| Passwords | OS keyring | Encrypted by the OS |
+
+---
+
+## FAQ
+
+### General
+
+**Q: Does Vaultik store or transmit my data?**
+No. Vaultik is a local desktop app with no servers and no telemetry. It calls the `restic` binary on your machine (or a remote server via SSH). Your data goes directly from source to repository, encrypted by restic before it leaves.
+
+**Q: Can I use my existing restic repositories?**
+Yes. When creating a profile, just enter the URL of an existing repository and your password. Vaultik will detect it and work with your existing snapshots.
+
+**Q: What happens if I uninstall Vaultik?**
+Your restic repositories are untouched. Profiles are stored in `~/.config/vaultik/` and can be deleted manually. You can always access your backups directly using the `restic` CLI.
+
+**Q: Can I run Vaultik and the restic CLI side by side?**
+Yes. Vaultik does not lock repositories. You can use both interchangeably. However, avoid running two operations on the same repository at the same time (restic will lock the repo and the second operation will fail).
+
+### Backups
+
+**Q: How do I back up to a remote server?**
+You have two options:
+1. **Remote repository** (restic runs locally, stores data remotely) — just enter a remote repo URL like `sftp:user@host:/backup` or `s3:...` in the repository field. Restic handles the remote connection.
+2. **Remote execution** (restic runs on the server via SSH) — set the execution mode to "Remote server (SSH)" in the profile editor. This is better when the data to back up lives on the server.
+
+**Q: How do I back up multiple directories?**
+Add each directory as a separate source in the profile editor. All sources are included in the same backup snapshot.
+
+**Q: What does "exclude caches" do?**
+It tells restic to skip directories that contain a `CACHEDIR.TAG` file. Many applications (build tools, package managers) mark their cache directories this way.
+
+**Q: Can I limit bandwidth usage?**
+Yes. In the profile editor under Advanced Settings, set upload and/or download limits in KiB/s.
+
+### Snapshots & Restore
+
+**Q: How do I restore a single file?**
+Go to Snapshots for the profile, select a snapshot, browse the file tree, check the file(s) you want, and click "Restore Selected". Choose a target directory and Vaultik will extract only those files.
+
+**Q: What does "Verify" do during restore?**
+When enabled, restic re-reads the restored files after writing them and compares their checksums against the repository to confirm the restore was successful.
+
+**Q: Can I delete old snapshots?**
+Yes. In the Snapshot Browser, click "forget" next to a snapshot to remove it. To automatically clean up old snapshots, configure a retention policy in the profile editor.
+
+### Scheduling
+
+**Q: How does scheduling work?**
+Vaultik creates OS-native scheduled tasks. On Linux, it writes systemd user timer and service units. On macOS, launchd plist files. On Windows, Task Scheduler entries. These run independently of Vaultik being open.
+
+**Q: What happens if my computer is off at the scheduled time?**
+On Linux with systemd, the timer has `Persistent=true`, so the backup will run shortly after the computer starts. macOS and Windows have similar catch-up behavior depending on OS settings.
+
+**Q: What does "Pause" do?**
+Pausing a profile uninstalls its OS timer so scheduled backups stop. The profile config is preserved. Resuming reinstalls the timer. You can still run manual backups on a paused profile.
+
+### Remote (SSH)
+
+**Q: Why does "Test SSH Connection" fail?**
+Common causes:
+- SSH key-based authentication is not configured (Vaultik uses `BatchMode=yes` and cannot prompt for passwords)
+- The host is unreachable or the port is wrong
+- `restic` is not installed on the remote server, or is not on the remote user's PATH (set a custom path in the profile)
+- `~/.ssh/config` host aliases work — make sure the alias resolves correctly
+
+**Q: Is the restic password secure over SSH?**
+The password is passed as an environment variable in the remote command (`env RESTIC_PASSWORD=... restic ...`). It is visible in `ps` on the remote server for the duration of the command. If this is a concern, use `--password-command` via the password file or command storage method instead.
+
+**Q: Can I use SSH agent forwarding?**
+Yes. Since Vaultik uses the system `ssh` binary, it respects your `~/.ssh/config`, SSH agent, `ProxyJump`, and all other SSH features.
+
+### Troubleshooting
+
+**Q: Vaultik says "restic not found"**
+Install restic and make sure it is on your PATH. Run `restic version` in a terminal to verify. If restic is installed in a non-standard location, set the path in Settings.
+
+**Q: Backup fails with "repository is locked"**
+Another restic process is running against the same repository. Wait for it to finish, or run `restic unlock --repo <url>` manually if you are certain no process is active.
+
+**Q: The profile editor shows a password error but I entered the right password**
+Passwords are stored in your OS keyring under the service "vaultik". If the keyring entry was deleted or the keyring daemon is not running, Vaultik cannot retrieve the password. Re-enter the password by creating a new profile or updating the keyring manually.
+
+**Q: Scheduled backups are not running**
+- **Linux**: Check with `systemctl --user list-timers` that the timer is active. Look at `journalctl --user -u vaultik-<profile-id>` for errors.
+- **macOS**: Check `launchctl list | grep vaultik`.
+- Make sure the profile is not paused (check the Dashboard for a "paused" badge).
+
+**Q: How do I see debug logs?**
+Set the `DEBUG_LOG` environment variable before launching Vaultik:
+```bash
+DEBUG_LOG=/tmp/vaultik-debug.log RUST_LOG=debug vaultik
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
