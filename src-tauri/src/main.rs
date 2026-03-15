@@ -43,6 +43,7 @@ fn main() {
             commands::remove_schedule,
             commands::export_profiles,
             commands::import_profiles,
+            commands::test_ssh_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

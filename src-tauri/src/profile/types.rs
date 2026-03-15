@@ -54,6 +54,10 @@ pub struct BackupProfile {
     pub upload_limit_kib: Option<u32>,
     pub download_limit_kib: Option<u32>,
     pub read_concurrency: Option<u32>,
+
+    // Remote execution
+    #[serde(default)]
+    pub remote_host: Option<RemoteHost>,
 }
 
 impl BackupProfile {
@@ -85,8 +89,22 @@ impl BackupProfile {
             upload_limit_kib: None,
             download_limit_kib: None,
             read_concurrency: None,
+            remote_host: None,
         }
     }
+}
+
+/// Configuration for executing restic on a remote host via SSH.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteHost {
+    /// SSH host in user@hostname format, or just hostname.
+    pub host: String,
+    /// SSH port (None means default 22).
+    pub port: Option<u16>,
+    /// Path to SSH private key (None means use ssh-agent/default keys).
+    pub identity_file: Option<String>,
+    /// Path to restic binary on the remote host (None means "restic" on PATH).
+    pub remote_restic_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +163,8 @@ pub struct ProfileSummary {
     pub source_count: usize,
     pub has_schedule: bool,
     pub paused: bool,
+    #[serde(default)]
+    pub is_remote: bool,
     pub last_run_at: Option<String>,
     pub last_run_exit_code: Option<i32>,
 }
@@ -158,6 +178,7 @@ impl From<&BackupProfile> for ProfileSummary {
             source_count: p.sources.len(),
             has_schedule: p.schedule.is_some(),
             paused: p.paused,
+            is_remote: p.remote_host.is_some(),
             last_run_at: None,
             last_run_exit_code: None,
         }

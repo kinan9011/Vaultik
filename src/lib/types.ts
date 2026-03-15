@@ -1,5 +1,12 @@
 // ── Profile types ─────────────────────────────────────────────────
 
+export interface RemoteHost {
+  host: string;
+  port: number | null;
+  identity_file: string | null;
+  remote_restic_path: string | null;
+}
+
 export interface BackupProfile {
   id: string;
   name: string;
@@ -24,6 +31,7 @@ export interface BackupProfile {
   upload_limit_kib: number | null;
   download_limit_kib: number | null;
   read_concurrency: number | null;
+  remote_host: RemoteHost | null;
 }
 
 export interface ProfileSummary {
@@ -33,6 +41,7 @@ export interface ProfileSummary {
   source_count: number;
   has_schedule: boolean;
   paused: boolean;
+  is_remote: boolean;
   last_run_at: string | null;
   last_run_exit_code: number | null;
 }

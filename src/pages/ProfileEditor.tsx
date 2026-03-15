@@ -7,12 +7,13 @@ import {
   deleteProfile,
   initRepo,
   testRepo,
+  testSshConnection,
   setSchedule,
   removeSchedule,
   runBackup,
   runCheck,
 } from "@/lib/tauri";
-import type { BackupProfile, RetentionPolicy, Schedule } from "@/lib/types";
+import type { BackupProfile, RemoteHost, RetentionPolicy, Schedule } from "@/lib/types";
 import { v4 as uuidv4 } from "uuid";
 
 function emptyProfile(): BackupProfile {
@@ -49,6 +50,7 @@ function emptyProfile(): BackupProfile {
     upload_limit_kib: null,
     download_limit_kib: null,
     read_concurrency: null,
+    remote_host: null,
   };
 }
 
@@ -378,6 +380,32 @@ export default function ProfileEditor() {
     }
   }
 
+  async function handleTestSsh() {
+    if (!profile.remote_host?.host) {
+      setStatus({ type: "error", message: "SSH host is required" });
+      return;
+    }
+    setStatus({ type: "loading", message: "Testing SSH connection..." });
+    try {
+      const version = await testSshConnection(
+        profile.remote_host.host,
+        profile.remote_host.port ?? undefined,
+        profile.remote_host.identity_file ?? undefined,
+        profile.remote_host.remote_restic_path ?? undefined,
+      );
+      setStatus({ type: "success", message: `SSH OK: ${version}` });
+    } catch (e) {
+      setStatus({ type: "error", message: String(e) });
+    }
+  }
+
+  function updateRemoteHost(patch: Partial<RemoteHost>) {
+    setProfile((p) => ({
+      ...p,
+      remote_host: p.remote_host ? { ...p.remote_host, ...patch } : null,
+    }));
+  }
+
   async function handleRunCheck() {
     setStatus({ type: "loading", message: "Running repository check..." });
     try {
@@ -465,6 +493,66 @@ export default function ProfileEditor() {
             onChange={(v) => update({ name: v })}
             placeholder="e.g. Laptop Daily"
           />
+        </Section>
+
+        {/* Execution Mode */}
+        <Section title="Execution Mode">
+          <Select
+            label="Run restic on"
+            value={profile.remote_host ? "remote" : "local"}
+            onChange={(v) => {
+              if (v === "local") {
+                update({ remote_host: null });
+              } else {
+                update({
+                  remote_host: {
+                    host: "",
+                    port: null,
+                    identity_file: null,
+                    remote_restic_path: null,
+                  },
+                });
+              }
+            }}
+            options={[
+              { value: "local", label: "This machine (local)" },
+              { value: "remote", label: "Remote server (SSH)" },
+            ]}
+          />
+
+          {profile.remote_host && (
+            <div className="space-y-3 pl-4 border-l-2 border-border mt-3">
+              <Input
+                label="SSH Host"
+                value={profile.remote_host.host}
+                onChange={(v) => updateRemoteHost({ host: v })}
+                placeholder="user@hostname or hostname"
+              />
+              <NumberInput
+                label="SSH Port (leave empty for 22)"
+                value={profile.remote_host.port}
+                onChange={(v) => updateRemoteHost({ port: v })}
+              />
+              <Input
+                label="Identity file (optional)"
+                value={profile.remote_host.identity_file || ""}
+                onChange={(v) => updateRemoteHost({ identity_file: v || null })}
+                placeholder="~/.ssh/id_ed25519"
+              />
+              <Input
+                label="Remote restic path (optional)"
+                value={profile.remote_host.remote_restic_path || ""}
+                onChange={(v) => updateRemoteHost({ remote_restic_path: v || null })}
+                placeholder="restic (default: on PATH)"
+              />
+              <button
+                onClick={handleTestSsh}
+                className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-bg-tertiary transition-colors"
+              >
+                Test SSH Connection
+              </button>
+            </div>
+          )}
         </Section>
 
         {/* Repository */}

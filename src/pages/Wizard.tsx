@@ -105,6 +105,7 @@ export default function Wizard() {
       upload_limit_kib: null,
       download_limit_kib: null,
       read_concurrency: null,
+      remote_host: null,
     };
 
     try {

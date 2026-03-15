@@ -11,22 +11,46 @@ use crate::profile::types::{
     BackupProfile, PasswordStorage, ProfileSummary, RetentionPolicy, Schedule,
 };
 use crate::restic::cli::ResticCommand;
+use crate::restic::executor::{CancelRegistry, ResticExecutor};
 use crate::restic::process::ProcessManager;
+use crate::restic::ssh_executor::{SshConfig, SshExecutor};
 use crate::restic::types::{BackupMessage, LsMessage, LsNode, RestoreMessage, Snapshot};
 
 pub struct AppState {
     pub profiles: ProfileStore,
-    pub process: ProcessManager,
+    pub local_executor: ProcessManager,
+    pub cancel_registry: CancelRegistry,
     pub db: Arc<Database>,
 }
 
 impl AppState {
     pub fn new(db: Database) -> Self {
+        let cancel_registry = CancelRegistry::new();
         Self {
             profiles: ProfileStore::new().expect("Failed to init profile store"),
-            process: ProcessManager::new(),
+            local_executor: ProcessManager::new(cancel_registry.clone()),
+            cancel_registry,
             db: Arc::new(db),
         }
+    }
+}
+
+/// Return the appropriate executor for a profile (local or SSH).
+fn get_executor(
+    profile: &BackupProfile,
+    cancel_registry: &CancelRegistry,
+) -> Box<dyn ResticExecutor> {
+    match &profile.remote_host {
+        Some(remote) => Box::new(SshExecutor::new(
+            SshConfig {
+                host: remote.host.clone(),
+                port: remote.port,
+                identity_file: remote.identity_file.clone(),
+                remote_restic_path: remote.remote_restic_path.clone(),
+            },
+            cancel_registry.clone(),
+        )),
+        None => Box::new(ProcessManager::new(cancel_registry.clone())),
     }
 }
 
@@ -96,7 +120,7 @@ pub async fn init_repo(
         .build();
 
     let (stdout, _) = state
-        .process
+        .local_executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -114,8 +138,8 @@ pub async fn test_repo(
         .with_password(&password)
         .build();
 
-    let (stdout, _) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -150,8 +174,8 @@ pub async fn run_backup(
         .with_password(&password)
         .build();
 
-    let (mut line_rx, mut result_rx) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (mut line_rx, mut result_rx) = executor
         .spawn(run_id.clone(), args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -257,8 +281,7 @@ pub async fn run_backup(
                         ResticCommand::forget_with_policy(&profile_clone, &retention, auto_prune)
                             .with_password(&pw)
                             .build();
-                    let pm = ProcessManager::new();
-                    let _ = pm.run_to_completion(forget_args, forget_env).await;
+                    let _ = executor.run_to_completion(forget_args, forget_env).await;
                 }
             }
 
@@ -270,8 +293,7 @@ pub async fn run_backup(
                         ResticCommand::check(&profile_clone, check_subset.as_deref())
                             .with_password(&pw)
                             .build();
-                    let pm = ProcessManager::new();
-                    let _ = pm.run_to_completion(check_args, check_env).await;
+                    let _ = executor.run_to_completion(check_args, check_env).await;
                 }
             }
         }
@@ -285,7 +307,7 @@ pub async fn cancel_operation(
     state: State<'_, AppState>,
     run_id: String,
 ) -> Result<bool, String> {
-    Ok(state.process.cancel(&run_id).await)
+    Ok(state.cancel_registry.cancel(&run_id).await)
 }
 
 // ── Snapshot commands ───────────────────────────────────────────────────────
@@ -303,8 +325,8 @@ pub async fn list_snapshots(
         .with_password(&password)
         .build();
 
-    let (stdout, _) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -334,8 +356,8 @@ pub async fn browse_snapshot(
         .with_password(&password)
         .build();
 
-    let (stdout, _) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -389,8 +411,8 @@ pub async fn run_restore(
     .with_password(&password)
     .build();
 
-    let (mut line_rx, mut result_rx) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (mut line_rx, mut result_rx) = executor
         .spawn(run_id.clone(), args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -437,6 +459,9 @@ pub async fn run_restore(
                 }),
             );
         }
+
+        // executor is dropped here (not used after spawn, but moved into task)
+        drop(executor);
     });
 
     Ok(run_id)
@@ -458,8 +483,8 @@ pub async fn forget_snapshots(
         .with_password(&password)
         .build();
 
-    let (stdout, _) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -483,8 +508,8 @@ pub async fn run_check(
         .with_password(&password)
         .build();
 
-    let (stdout, _) = state
-        .process
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;
@@ -534,7 +559,32 @@ pub async fn get_run_history(
 pub async fn get_restic_version(state: State<'_, AppState>) -> Result<String, String> {
     let (args, env) = ResticCommand::version().build();
     let (stdout, _) = state
-        .process
+        .local_executor
+        .run_to_completion(args, env)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(stdout.trim().to_string())
+}
+
+// ── SSH commands ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn test_ssh_connection(
+    state: State<'_, AppState>,
+    host: String,
+    port: Option<u16>,
+    identity_file: Option<String>,
+    remote_restic_path: Option<String>,
+) -> Result<String, String> {
+    let config = SshConfig {
+        host,
+        port,
+        identity_file,
+        remote_restic_path,
+    };
+    let executor = SshExecutor::new(config, state.cancel_registry.clone());
+    let (args, env) = (vec!["version".to_string()], vec![]);
+    let (stdout, _) = executor
         .run_to_completion(args, env)
         .await
         .map_err(|e| e.to_string())?;

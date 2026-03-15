@@ -310,6 +310,11 @@ export default function Dashboard() {
                       >
                         {profile.name}
                       </button>
+                      {profile.is_remote && (
+                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-accent/20 text-accent uppercase">
+                          remote
+                        </span>
+                      )}
                       {profile.paused && (
                         <span className="px-1.5 py-0.5 text-[10px] rounded bg-text-muted/20 text-text-muted uppercase">
                           paused

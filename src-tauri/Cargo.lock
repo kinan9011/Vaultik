@@ -4808,6 +4808,7 @@ dependencies = [
 name = "vaultik"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "dirs",
  "env_logger",

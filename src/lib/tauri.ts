@@ -149,6 +149,22 @@ export async function importProfiles(path: string): Promise<ImportResult> {
   return invoke("import_profiles", { path });
 }
 
+// ── SSH commands ─────────────────────────────────────────────────
+
+export async function testSshConnection(
+  host: string,
+  port?: number,
+  identityFile?: string,
+  remoteResticPath?: string,
+): Promise<string> {
+  return invoke("test_ssh_connection", {
+    host,
+    port: port ?? null,
+    identityFile: identityFile ?? null,
+    remoteResticPath: remoteResticPath ?? null,
+  });
+}
+
 // ── Schedule commands ─────────────────────────────────────────────
 
 export async function setSchedule(
