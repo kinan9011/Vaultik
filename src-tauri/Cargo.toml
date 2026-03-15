@@ -1,0 +1,31 @@
+[package]
+name = "vaultik"
+version = "0.1.0"
+edition = "2021"
+description = "Vaultik — encrypted backups, beautifully simple"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.34", features = ["bundled"] }
+keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
+notify-rust = "4"
+thiserror = "2"
+which = "7"
+dirs = "6"
+log = "0.4"
+env_logger = "0.11"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
