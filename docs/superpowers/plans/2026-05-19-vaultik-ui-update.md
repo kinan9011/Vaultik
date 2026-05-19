@@ -1,3 +1,24 @@
+# Vaultik UI Update Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Implement the new UI design from `docs/Design/project/` into the Vaultik React/Tauri codebase.
+
+**Architecture:** We will convert the JSX prototype files into strongly typed React components in the `src/` directory. We'll use the vanilla CSS provided in `docs/Design/project/styles.css` by merging it into `src/styles.css`. The `Shell` layout will wrap the router routes in `src/App.tsx`.
+
+**Tech Stack:** React, TypeScript, Vite, Tauri v2, Vanilla CSS.
+
+---
+
+### Task 1: Setup CSS Design System
+
+**Files:**
+- Modify: `src/styles.css`
+
+- [ ] **Step 1: Replace styles.css content**
+    Replace the contents of `src/styles.css` with the design system CSS from `docs/Design/project/styles.css`, keeping any Tailwind imports at the top if needed (though the design relies mostly on vanilla CSS).
+
+```css
 @import "tailwindcss";
 
 /* Vaultik design system */
@@ -416,3 +437,141 @@ body {
 .scroll::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
 .v-body::-webkit-scrollbar-track,
 .scroll::-webkit-scrollbar-track { background: transparent; }
+```
+
+- [ ] **Step 2: Verify build**
+
+Run: `npm run build`
+Expected: Passes without errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/styles.css
+git commit -m "style: apply new vaultik design system css"
+```
+
+---
+
+### Task 2: Create Icons Component
+
+**Files:**
+- Create: `src/components/Icons.tsx`
+
+- [ ] **Step 1: Write Icons component from `icons.jsx`**
+    Create `src/components/Icons.tsx` and copy the SVG icon declarations from `docs/Design/project/icons.jsx`. Make sure they are correctly typed for TypeScript (e.g., using `React.SVGProps<SVGSVGElement>`).
+
+- [ ] **Step 2: Verify component builds**
+
+Run: `npm run build`
+Expected: Build passes.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/Icons.tsx
+git commit -m "feat: add icons component from prototype"
+```
+
+---
+
+### Task 3: Create Shell Components
+
+**Files:**
+- Create/Modify: `src/components/Shell.tsx`
+- Note: This will replace the existing `src/components/Sidebar.tsx`.
+
+- [ ] **Step 1: Write `Shell.tsx`**
+    Create `src/components/Shell.tsx` and copy the logic for the `Sidebar` and `TopBar` components from `docs/Design/project/shell.jsx`. Use `react-router-dom` `NavLink` components for the links in the Sidebar to correctly highlight active items based on location.
+
+- [ ] **Step 2: Verify code**
+
+Run: `npm run build`
+Expected: Build passes.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/Shell.tsx
+git commit -m "feat: add shell components (Sidebar, TopBar)"
+```
+
+---
+
+### Task 4: Port Core App Component
+
+**Files:**
+- Modify: `src/App.tsx`
+- Delete: `src/components/Sidebar.tsx` (optional)
+
+- [ ] **Step 1: Rewrite App.tsx**
+    Change `src/App.tsx` to use the new `Shell.tsx` `Sidebar` instead of `src/components/Sidebar.tsx`. Add `<div className="v-app">` to wrap everything according to the design system layout constraints. The routes will live inside `<div className="v-main">`.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/App.tsx
+git rm src/components/Sidebar.tsx
+git commit -m "refactor: integrate new shell layout into app"
+```
+
+---
+
+### Task 5: Port Dashboard Screen
+
+**Files:**
+- Modify: `src/pages/Dashboard.tsx`
+
+- [ ] **Step 1: Write `src/pages/Dashboard.tsx` using `docs/Design/project/screens/dashboard.jsx`**
+    You will need to manually port the prototype JSX to TypeScript, ensuring the `TopBar` is imported from `../components/Shell` and icons from `../components/Icons`. The dashboard uses `ActiveBackupCard`, `HealthSummary`, and `ProfileCard`. Use the provided `SAMPLE_PROFILES` array to render dummy data. Ensure that classes and styles map correctly. Remove `window.Screens.Dashboard` assignment.
+
+- [ ] **Step 2: Verify component builds**
+
+Run: `npm run build`
+Expected: Build passes.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/Dashboard.tsx
+git commit -m "feat: port dashboard screen from prototype"
+```
+
+---
+
+### Task 6: Port Other Screens
+
+**Files:**
+- Modify: `src/pages/Wizard.tsx`
+- Modify: `src/pages/SnapshotBrowser.tsx`
+- Modify: `src/pages/ProfileEditor.tsx`
+- Modify: `src/pages/RunHistory.tsx`
+- Modify: `src/pages/Settings.tsx`
+
+- [ ] **Step 1: Port each file**
+    For each screen, copy the JSX from `docs/Design/project/screens/*.jsx` into the corresponding `src/pages/*.tsx`.
+    - Replace `window.Icons` and `window.Shell` with imports from `../components/Icons` and `../components/Shell`.
+    - Extract any inline dummy data into local component constants.
+    - Convert any missing HTML properties to React props (e.g. `class` to `className`, `style` string mappings to objects if needed—the prototypes already use React `style` objects, so this shouldn't be much work).
+
+- [ ] **Step 2: Verify builds**
+
+Run: `npm run build`
+Expected: Build passes with no TypeScript errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/
+git commit -m "feat: port all remaining screens from design prototype"
+```
+
+---
+
+### Task 7: Cleanup & Final Verification
+
+- [ ] **Step 1: Final review**
+    Check that `npm run build` completely passes and the Tauri application can start if run. Make sure that no prototype JS files from the `docs/Design/project/` leak into the actual production bundle.
+
+- [ ] **Step 2: Commit**
+    Commit any lingering adjustments.

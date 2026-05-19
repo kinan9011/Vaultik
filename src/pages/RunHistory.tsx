@@ -1,184 +1,471 @@
-import { useEffect, useState } from "react";
-import { getRunHistory, listProfiles } from "@/lib/tauri";
-import type { RunRecord, ProfileSummary } from "@/lib/types";
-import { formatBytes, formatDuration } from "@/components/ProgressBar";
+import { TopBar } from "../components/Shell";
+import {
+  IconCheck,
+  IconAlert,
+  IconX,
+  IconRefresh,
+  IconChevronRight,
+  IconChevronDown,
+  IconSearch,
+  IconPlay,
+  IconRestore,
+  IconShield,
+  IconDownload,
+  IconTrash,
+} from "../components/Icons";
 
-function StatusBadge({ exitCode }: { exitCode: number | null }) {
-  if (exitCode === null)
-    return <span className="px-2 py-0.5 text-xs rounded bg-accent/15 text-accent">running</span>;
-  if (exitCode === 0)
-    return <span className="px-2 py-0.5 text-xs rounded bg-success/15 text-success">success</span>;
-  if (exitCode === 3)
-    return <span className="px-2 py-0.5 text-xs rounded bg-warning/15 text-warning">partial</span>;
-  return <span className="px-2 py-0.5 text-xs rounded bg-error/15 text-error">failed</span>;
-}
+const RUNS = [
+  {
+    status: "running",
+    profile: "Home Documents",
+    op: "backup",
+    trigger: "manual",
+    started: "Today, 14:26",
+    duration: "Running…",
+    expanded: true,
+    details: { files: "14,523 / 21,890", added: "318 MB", changed: "642", new: "84" },
+  },
+  {
+    status: "success",
+    profile: "Photos Library",
+    op: "backup",
+    trigger: "scheduled",
+    started: "Today, 12:00",
+    duration: "8m 14s",
+    details: { files: "412,008", added: "12 MB", changed: "4", new: "12" },
+  },
+  {
+    status: "success",
+    profile: "Production DB Server",
+    op: "check",
+    trigger: "scheduled",
+    started: "Today, 11:30",
+    duration: "2m 41s",
+  },
+  {
+    status: "warn",
+    profile: "Workstation Projects",
+    op: "backup",
+    trigger: "scheduled",
+    started: "Today, 09:04",
+    duration: "12m 06s",
+    note: "3 files skipped (permission denied)",
+  },
+  {
+    status: "success",
+    profile: "Production DB Server",
+    op: "backup",
+    trigger: "scheduled",
+    started: "Today, 09:00",
+    duration: "1m 38s",
+  },
+  {
+    status: "success",
+    profile: "Home Documents",
+    op: "restore",
+    trigger: "manual",
+    started: "Yesterday, 17:42",
+    duration: "3m 22s",
+    note: "Restored 142 files to /tmp/restore-may-18",
+  },
+  {
+    status: "fail",
+    profile: "Workstation Projects",
+    op: "backup",
+    trigger: "scheduled",
+    started: "Yesterday, 18:00",
+    duration: "0m 04s",
+    note: "Failed: repository is locked (held by PID 4128 on db-01)",
+  },
+  {
+    status: "success",
+    profile: "Production DB Server",
+    op: "forget",
+    trigger: "scheduled",
+    started: "Yesterday, 03:00",
+    duration: "0m 12s",
+    note: "Removed 2 snapshots · pruned 384 MB",
+  },
+  {
+    status: "success",
+    profile: "Photos Library",
+    op: "backup",
+    trigger: "scheduled",
+    started: "May 17, 03:00",
+    duration: "11m 02s",
+  },
+];
 
-function parseSummary(json: string | null) {
-  if (!json) return null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
+const STATUS_MAP: Record<string, any> = {
+  running: { label: "running", color: "var(--info)", bg: "var(--info-soft)", border: "rgba(96,165,250,0.32)", icon: IconRefresh },
+  success: { label: "success", color: "var(--accent)", bg: "var(--accent-soft)", border: "var(--accent-line)", icon: IconCheck },
+  warn: { label: "partial", color: "var(--warn)", bg: "var(--warn-soft)", border: "rgba(251,191,36,0.32)", icon: IconAlert },
+  fail: { label: "failed", color: "var(--danger)", bg: "var(--danger-soft)", border: "rgba(248,113,113,0.32)", icon: IconX },
+};
 
-export default function RunHistory() {
-  const [records, setRecords] = useState<RunRecord[]>([]);
-  const [profiles, setProfiles] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [filterProfile, setFilterProfile] = useState<string>("");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+const OP_ICON: Record<string, any> = {
+  backup: IconPlay,
+  restore: IconRestore,
+  check: IconShield,
+  forget: IconTrash,
+};
 
-  useEffect(() => {
-    Promise.all([
-      getRunHistory(undefined, 200),
-      listProfiles(),
-    ]).then(([records, profs]) => {
-      setRecords(records);
-      const map = new Map<string, string>();
-      profs.forEach((p: ProfileSummary) => map.set(p.id, p.name));
-      setProfiles(map);
-    }).catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const filtered = filterProfile
-    ? records.filter((r) => r.profile_id === filterProfile)
-    : records;
-
-  function formatTime(iso: string) {
-    return new Date(iso).toLocaleString();
-  }
-
-  function duration(r: RunRecord): string {
-    if (!r.finished_at) return "-";
-    const ms = new Date(r.finished_at).getTime() - new Date(r.started_at).getTime();
-    return formatDuration(ms / 1000);
-  }
-
+const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
+  const s = STATUS_MAP[r.status];
+  const Op = OP_ICON[r.op];
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-semibold">Run History</h2>
-        {profiles.size > 0 && (
-          <select
-            value={filterProfile}
-            onChange={(e) => setFilterProfile(e.target.value)}
-            className="px-3 py-1.5 bg-bg-tertiary border border-border rounded-lg text-sm text-text"
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "3px 9px",
+            borderRadius: 100,
+            background: s.bg,
+            color: s.color,
+            border: "1px solid " + s.border,
+            fontSize: 11,
+            fontWeight: 500,
+            fontVariantCaps: "all-small-caps",
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            minWidth: 78,
+            justifyContent: "center",
+          }}
+        >
+          <s.icon
+            size={10}
+            style={r.status === "running" ? { animation: "spin 1.6s linear infinite" } : undefined}
+          />
+          {s.label}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+          <Op size={13} style={{ color: "var(--text-3)" }} />
+          <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+            {r.op[0].toUpperCase() + r.op.slice(1)}
+          </span>
+          <span style={{ color: "var(--text-4)" }}>·</span>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>{r.profile}</span>
+          <span className="badge" style={{ fontSize: 10.5 }}>
+            {r.trigger}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11.5,
+              color: "var(--text-2)",
+            }}
           >
-            <option value="">All profiles</option>
-            {Array.from(profiles.entries()).map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </select>
-        )}
+            {r.duration}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-4)", marginTop: 2 }}>
+            {r.started}
+          </span>
+        </div>
+
+        <button className="btn btn-icon" style={{ width: 26, height: 26 }}>
+          {r.expanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+        </button>
       </div>
 
-      {loading ? (
-        <p className="text-text-muted">Loading...</p>
-      ) : filtered.length === 0 ? (
-        <p className="text-text-muted text-center py-12">
-          No runs recorded yet. Run a backup to see history here.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((r) => {
-            const summary = parseSummary(r.summary);
-            const isExpanded = expandedId === r.id;
+      {r.expanded && r.details && (
+        <div
+          style={{
+            padding: "12px 18px 16px",
+            borderTop: "1px solid var(--border)",
+            background: "var(--bg-2)",
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 18,
+          }}
+        >
+          <Detail label="Files processed" value={r.details.files} />
+          <Detail label="Data added" value={r.details.added} mono />
+          <Detail label="Changed files" value={r.details.changed} />
+          <Detail label="New files" value={r.details.new} />
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              marginTop: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--text-3)",
+                padding: "3px 8px",
+                borderRadius: 4,
+                background: "var(--surface-2)",
+              }}
+            >
+              snapshot 8a2f7c1d
+            </span>
+            <span style={{ flex: 1 }} />
+            <button className="btn btn-sm btn-ghost">
+              <IconDownload size={11} /> Export log
+            </button>
+          </div>
+        </div>
+      )}
 
-            return (
-              <div key={r.id} className="bg-bg-secondary border border-border rounded-lg">
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : r.id)}
-                  className="w-full p-4 text-left"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <StatusBadge exitCode={r.exit_code} />
-                      <span className="text-sm font-medium">{r.operation}</span>
-                      <span className="text-xs text-text-muted">
-                        {profiles.get(r.profile_id) || r.profile_id.slice(0, 8)}
-                      </span>
-                      <span className="text-xs text-text-muted">
-                        via {r.trigger}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-text-muted">{duration(r)}</span>
-                      <span className="text-xs text-text-muted">
-                        {formatTime(r.started_at)}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-
-                {isExpanded && (
-                  <div className="px-4 pb-4 space-y-2 border-t border-border/50 pt-3">
-                    {r.snapshot_id && (
-                      <div className="flex gap-2 text-xs">
-                        <span className="text-text-muted">Snapshot:</span>
-                        <span className="font-mono">{r.snapshot_id}</span>
-                      </div>
-                    )}
-                    {r.finished_at && (
-                      <div className="flex gap-2 text-xs">
-                        <span className="text-text-muted">Finished:</span>
-                        <span>{formatTime(r.finished_at)}</span>
-                      </div>
-                    )}
-                    {summary && (
-                      <div className="grid grid-cols-3 gap-2 mt-2 p-3 bg-bg-tertiary rounded text-xs">
-                        {summary.files_new !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Files new: </span>
-                            <span>{summary.files_new}</span>
-                          </div>
-                        )}
-                        {summary.files_changed !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Changed: </span>
-                            <span>{summary.files_changed}</span>
-                          </div>
-                        )}
-                        {summary.files_unmodified !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Unchanged: </span>
-                            <span>{summary.files_unmodified}</span>
-                          </div>
-                        )}
-                        {summary.data_added !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Added: </span>
-                            <span>{formatBytes(summary.data_added)}</span>
-                          </div>
-                        )}
-                        {summary.total_duration !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Duration: </span>
-                            <span>{formatDuration(summary.total_duration)}</span>
-                          </div>
-                        )}
-                        {summary.total_files_processed !== undefined && (
-                          <div>
-                            <span className="text-text-muted">Total files: </span>
-                            <span>{summary.total_files_processed.toLocaleString()}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {r.errors && (
-                      <div className="mt-2 p-3 bg-error/5 rounded text-xs text-error">
-                        <span className="font-medium">Errors: </span>
-                        {r.errors}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {!r.expanded && r.note && (
+        <div
+          style={{
+            padding: "10px 18px",
+            borderTop: "1px solid var(--border)",
+            fontSize: 11.5,
+            color:
+              r.status === "fail"
+                ? "var(--danger)"
+                : r.status === "warn"
+                ? "var(--warn)"
+                : "var(--text-3)",
+            fontFamily: "var(--font-mono)",
+            background:
+              r.status === "fail"
+                ? "rgba(248,113,113,0.04)"
+                : r.status === "warn"
+                ? "rgba(251,191,36,0.04)"
+                : "var(--bg-2)",
+          }}
+        >
+          {r.note}
         </div>
       )}
     </div>
   );
+};
+
+const Detail = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
+  <div>
+    <div
+      style={{
+        fontSize: 10.5,
+        color: "var(--text-4)",
+        textTransform: "uppercase",
+        letterSpacing: "0.06em",
+        fontWeight: 500,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        marginTop: 4,
+        fontSize: 14,
+        fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
+        fontWeight: mono ? 500 : 600,
+        color: "var(--text)",
+      }}
+    >
+      {value}
+    </div>
+  </div>
+);
+
+export default function RunHistory() {
+  return (
+    <>
+      <TopBar
+        title="Run History"
+        sub="Every backup, restore, check, and forget operation — fully searchable."
+        actions={
+          <>
+            <button className="btn">
+              <IconDownload size={12} /> Export
+            </button>
+          </>
+        }
+      />
+      <div className="v-body">
+        <div style={{ maxWidth: 1100 }}>
+          <div
+            className="card"
+            style={{
+              marginBottom: 18,
+              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+              <IconSearch
+                size={12}
+                style={{
+                  position: "absolute",
+                  left: 9,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "var(--text-4)",
+                }}
+              />
+              <input
+                className="input"
+                placeholder="Search by profile, operation, error message…"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
+
+            <FilterPill label="Profile" value="All profiles" />
+            <FilterPill label="Operation" value="All" />
+            <FilterPill label="Status" value="All" />
+            <FilterPill label="Range" value="Last 30 days" />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 10,
+              marginBottom: 18,
+            }}
+          >
+            <StatTile label="Total runs" value="142" tone="text" />
+            <StatTile label="Successful" value="134" tone="ok" sub="94.4%" />
+            <StatTile label="Partial / warnings" value="6" tone="warn" />
+            <StatTile label="Failed" value="2" tone="bad" />
+          </div>
+
+          <DaySep label="Today, May 19" count={4} />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginBottom: 18,
+            }}
+          >
+            {RUNS.slice(0, 4).map((r, i) => (
+              <RunRow key={i} r={r} />
+            ))}
+          </div>
+
+          <DaySep label="Yesterday, May 18" count={3} />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginBottom: 18,
+            }}
+          >
+            {RUNS.slice(4, 7).map((r, i) => (
+              <RunRow key={i} r={r} />
+            ))}
+          </div>
+
+          <DaySep label="Saturday, May 17" count={2} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {RUNS.slice(7).map((r, i) => (
+              <RunRow key={i} r={r} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
+
+const FilterPill = ({ label, value }: { label: string; value: string }) => (
+  <button className="btn btn-sm" style={{ padding: "5px 10px" }}>
+    <span style={{ color: "var(--text-4)", fontSize: 11 }}>{label}:</span>
+    <span style={{ color: "var(--text)", marginLeft: 4 }}>{value}</span>
+    <IconChevronDown size={11} style={{ color: "var(--text-4)" }} />
+  </button>
+);
+
+const StatTile = ({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone: string;
+}) => {
+  const color =
+    tone === "ok"
+      ? "var(--accent)"
+      : tone === "warn"
+      ? "var(--warn)"
+      : tone === "bad"
+      ? "var(--danger)"
+      : "var(--text)";
+  return (
+    <div className="card" style={{ padding: "14px 16px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--text-4)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          fontWeight: 500,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 6,
+          marginTop: 4,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 22,
+            fontWeight: 500,
+            color: color,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {value}
+        </span>
+        {sub && (
+          <span style={{ fontSize: 11, color: "var(--text-4)" }}>{sub}</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DaySep = ({ label, count }: { label: string; count: number }) => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 10,
+    }}
+  >
+    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
+      {label}
+    </span>
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        color: "var(--text-4)",
+      }}
+    >
+      {count} runs
+    </span>
+    <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+  </div>
+);

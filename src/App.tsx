@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import Sidebar from "./components/Sidebar";
+import { Sidebar } from "./components/Shell";
 import Dashboard from "./pages/Dashboard";
 import ProfileEditor from "./pages/ProfileEditor";
 import SnapshotBrowser from "./pages/SnapshotBrowser";
@@ -8,10 +8,17 @@ import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
 
 export default function App() {
+  const SAMPLE_PROFILES = [
+    { name: "Home Documents", status: "running" },
+    { name: "Photos Library", status: "healthy" },
+    { name: "Production DB Server", status: "healthy" },
+    { name: "Workstation Projects", status: "warn" },
+  ];
+
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
+    <div className="v-app">
+      <Sidebar profiles={SAMPLE_PROFILES} />
+      <div className="v-main">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/wizard" element={<Wizard />} />
@@ -22,7 +29,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </main>
+      </div>
     </div>
   );
 }

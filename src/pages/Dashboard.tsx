@@ -1,369 +1,596 @@
-import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { listProfiles, runBackup, cancelOperation, getResticVersion, togglePause } from "@/lib/tauri";
-import type { ProfileSummary, BackupProgressEvent } from "@/lib/types";
-import { useResticEvent } from "@/hooks/useResticEvents";
-import ProgressBar, { formatBytes, formatDuration } from "@/components/ProgressBar";
+import { TopBar } from "../components/Shell";
+import {
+  IconPlus,
+  IconPlay,
+  IconPause,
+  IconStop,
+  IconCamera,
+  IconDots,
+  IconShield,
+  IconClock,
+  IconAlert,
+  IconHdd,
+  IconCloud,
+  IconServer,
+  IconBell,
+  IconRefresh,
+  IconFilter,
+} from "../components/Icons";
 
-function StatusBadge({ profile }: { profile: ProfileSummary }) {
-  if (profile.paused) {
-    return (
-      <span className="w-2.5 h-2.5 rounded-full bg-text-muted opacity-50 flex-shrink-0" title="Paused" />
-    );
-  }
-  if (profile.last_run_exit_code === null && profile.last_run_at === null) {
-    return (
-      <span className="w-2.5 h-2.5 rounded-full bg-text-muted flex-shrink-0" title="Never run" />
-    );
-  }
-  if (profile.last_run_exit_code === 0) {
-    return (
-      <span className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" title="Healthy" />
-    );
-  }
-  if (profile.last_run_exit_code === 3) {
-    return (
-      <span className="w-2.5 h-2.5 rounded-full bg-warning flex-shrink-0" title="Completed with warnings" />
-    );
-  }
-  return (
-    <span className="w-2.5 h-2.5 rounded-full bg-error flex-shrink-0" title="Last run failed" />
-  );
-}
+const SAMPLE_PROFILES = [
+  {
+    name: "Home Documents",
+    status: "running",
+    backendIcon: IconHdd,
+    backend: "Local",
+    repo: "/mnt/backup/home-repo",
+    sources: 3,
+    schedule: "Daily · 02:00",
+    lastRun: "Running now",
+    note: "",
+    remote: false,
+  },
+  {
+    name: "Photos Library",
+    status: "healthy",
+    backendIcon: IconCloud,
+    backend: "Backblaze B2",
+    repo: "b2:photos-cold:family",
+    sources: 1,
+    schedule: "Weekly · Sun 03:00",
+    lastRun: "2 hours ago",
+    note: "",
+    remote: false,
+  },
+  {
+    name: "Production DB Server",
+    status: "healthy",
+    backendIcon: IconServer,
+    backend: "SFTP · ssh",
+    repo: "sftp:ops@db-01:/srv/restic",
+    sources: 2,
+    schedule: "Hourly",
+    lastRun: "23 min ago",
+    remote: true,
+    note: "",
+  },
+  {
+    name: "Workstation Projects",
+    status: "warn",
+    backendIcon: IconCloud,
+    backend: "S3",
+    repo: "s3:s3.amazonaws.com/work-snaps",
+    sources: 4,
+    schedule: "Daily · 18:00",
+    lastRun: "Yesterday, 18:04",
+    note: "3 files skipped (permission denied)",
+    remote: false,
+  },
+  {
+    name: "Old Laptop Archive",
+    status: "paused",
+    backendIcon: IconHdd,
+    backend: "Local",
+    repo: "/mnt/archive/laptop",
+    sources: 2,
+    schedule: "Paused",
+    lastRun: "5 days ago",
+    note: "",
+    remote: false,
+  },
+  {
+    name: "Music & Media",
+    status: "idle",
+    backendIcon: IconCloud,
+    backend: "rclone",
+    repo: "rclone:gdrive:media-backup",
+    sources: 1,
+    schedule: "Not scheduled",
+    lastRun: "Never run",
+    note: "",
+    remote: false,
+  },
+];
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-interface ActiveRun {
-  runId: string;
-  profileId: string;
-  percentDone: number;
-  filesDone: number;
-  totalFiles: number;
-  bytesDone: number;
-  totalBytes: number;
-  secondsRemaining: number;
-  currentFiles: string[];
-  errorCount: number;
-  completed: boolean;
-  exitCode: number | null;
-  filesNew: number;
-  dataAdded: number;
-}
-
-export default function Dashboard() {
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [resticVersion, setResticVersion] = useState<string>("");
-  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
-
-  const loadProfiles = useCallback(() => {
-    listProfiles().then(setProfiles).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    loadProfiles();
-    getResticVersion().then(setResticVersion).catch(() =>
-      setResticVersion("restic not found"),
-    );
-  }, [loadProfiles]);
-
-  useResticEvent<BackupProgressEvent>("backup-progress", (event) => {
-    if (!activeRun || event.run_id !== activeRun.runId) return;
-    const msg = event.message;
-    if (msg.message_type === "status") {
-      setActiveRun((prev) =>
-        prev
-          ? {
-              ...prev,
-              percentDone: msg.percent_done,
-              filesDone: msg.files_done,
-              totalFiles: msg.total_files,
-              bytesDone: msg.bytes_done,
-              totalBytes: msg.total_bytes,
-              secondsRemaining: msg.seconds_remaining,
-              currentFiles: msg.current_files,
-              errorCount: msg.error_count,
-            }
-          : null,
-      );
-    } else if (msg.message_type === "summary") {
-      setActiveRun((prev) =>
-        prev
-          ? { ...prev, filesNew: msg.files_new, dataAdded: msg.data_added }
-          : null,
-      );
-    }
-  });
-
-  useResticEvent<{
-    run_id: string;
-    exit_code: number;
-    cancelled: boolean;
-    files_new?: number;
-    data_added?: number;
-    error_count?: number;
-  }>("backup-complete", (event) => {
-    if (!activeRun || event.run_id !== activeRun.runId) return;
-    setActiveRun((prev) =>
-      prev ? { ...prev, completed: true, exitCode: event.exit_code } : null,
-    );
-    // Clear after delay and refresh profiles
-    setTimeout(() => {
-      setActiveRun(null);
-      loadProfiles();
-    }, 4000);
-  });
-
-  async function handleRunBackup(profileId: string) {
-    setError(null);
-    try {
-      const runId = await runBackup(profileId);
-      setActiveRun({
-        runId,
-        profileId,
-        percentDone: 0,
-        filesDone: 0,
-        totalFiles: 0,
-        bytesDone: 0,
-        totalBytes: 0,
-        secondsRemaining: 0,
-        currentFiles: [],
-        errorCount: 0,
-        completed: false,
-        exitCode: null,
-        filesNew: 0,
-        dataAdded: 0,
-      });
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function handleCancel() {
-    if (activeRun) {
-      await cancelOperation(activeRun.runId);
-    }
-  }
-
-  async function handleTogglePause(profileId: string) {
-    try {
-      await togglePause(profileId);
-      loadProfiles();
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  const healthyCount = profiles.filter((p) => p.last_run_exit_code === 0 && !p.paused).length;
-  const failedCount = profiles.filter(
-    (p) => p.last_run_exit_code !== null && p.last_run_exit_code !== 0 && p.last_run_exit_code !== 3,
-  ).length;
-  const neverRun = profiles.filter((p) => p.last_run_at === null).length;
-
-  return (
-    <div className="p-8 max-w-4xl">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="text-2xl font-semibold">Dashboard</h2>
-          <p className="text-text-secondary text-sm mt-1">
-            {resticVersion || "Detecting restic..."}
-          </p>
-        </div>
-        <button
-          onClick={() => navigate("/profiles/new")}
-          className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+const ActiveBackupCard = () => (
+  <div
+    className="card"
+    style={{
+      background:
+        "linear-gradient(180deg, rgba(96,165,250,0.08) 0%, var(--surface) 60%)",
+      borderColor: "rgba(96,165,250,0.25)",
+    }}
+  >
+    <div style={{ padding: "18px 22px 14px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            placeItems: "center",
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            background: "rgba(96,165,250,0.14)",
+            border: "1px solid rgba(96,165,250,0.28)",
+          }}
         >
-          New Profile
+          <IconRefresh
+            size={16}
+            style={{
+              color: "var(--info)",
+              animation: "spin 2.4s linear infinite",
+            }}
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Home Documents</div>
+            <span className="badge info">backing up</span>
+          </div>
+          <div style={{ color: "var(--text-3)", fontSize: 12, marginTop: 2 }}>
+            Started 4 min ago · estimated 2m 14s remaining
+          </div>
+        </div>
+        <button className="btn btn-sm">
+          <IconStop size={12} /> Cancel
         </button>
       </div>
 
-      {error && (
-        <div className="mb-6 p-4 bg-error/10 border border-error/30 rounded-lg text-error text-sm">
-          {error}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 8,
+        }}
+      >
+        <div className="bar" style={{ flex: 1, height: 8 }}>
+          <div className="bar-fill" style={{ width: "67%" }} />
         </div>
-      )}
-
-      {/* Health summary */}
-      {profiles.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="p-4 bg-bg-secondary border border-border rounded-lg">
-            <p className="text-2xl font-semibold text-success">{healthyCount}</p>
-            <p className="text-xs text-text-muted mt-1">Healthy</p>
-          </div>
-          <div className="p-4 bg-bg-secondary border border-border rounded-lg">
-            <p className="text-2xl font-semibold text-error">{failedCount}</p>
-            <p className="text-xs text-text-muted mt-1">Failed</p>
-          </div>
-          <div className="p-4 bg-bg-secondary border border-border rounded-lg">
-            <p className="text-2xl font-semibold text-text-muted">{neverRun}</p>
-            <p className="text-xs text-text-muted mt-1">Never run</p>
-          </div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            color: "var(--text)",
+          }}
+        >
+          67%
         </div>
-      )}
+      </div>
 
-      {/* Active backup progress */}
-      {activeRun && !activeRun.completed && (
-        <div className="mb-6 p-5 bg-bg-secondary border border-accent/30 rounded-lg">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium">
-              Backup in progress...
-            </span>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-text-secondary">
-                {Math.round(activeRun.percentDone * 100)}%
-              </span>
-              <button
-                onClick={handleCancel}
-                className="px-2 py-1 text-xs text-error border border-error/30 rounded hover:bg-error/10 transition-colors"
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 18,
+          marginTop: 14,
+        }}
+      >
+        <Stat label="Files processed" value="14,523" total="/ 21,890" />
+        <Stat label="Data transferred" value="3.2 GB" total="/ 4.8 GB" />
+        <Stat label="Throughput" value="42.6 MB/s" />
+        <Stat label="Errors" value="0" tone="ok" />
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          paddingTop: 14,
+          borderTop: "1px dashed var(--border)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          fontFamily: "var(--font-mono)",
+          fontSize: 11.5,
+          color: "var(--text-3)",
+        }}
+      >
+        <span style={{ color: "var(--text-4)" }}>scanning</span>
+        <span
+          style={{
+            color: "var(--text-2)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flex: 1,
+          }}
+        >
+          /home/kinan/Documents/projects/vaultik/src-tauri/target/release/build/…/output.rs
+        </span>
+      </div>
+    </div>
+  </div>
+);
+
+const Stat = ({
+  label,
+  value,
+  total,
+  tone,
+}: {
+  label: string;
+  value: string;
+  total?: string;
+  tone?: string;
+}) => (
+  <div>
+    <div
+      style={{
+        fontSize: 11,
+        color: "var(--text-3)",
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        fontWeight: 500,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 4 }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 18,
+          fontWeight: 500,
+          color: tone === "ok" ? "var(--accent)" : "var(--text)",
+          letterSpacing: "-0.01em",
+        }}
+      >
+        {value}
+      </span>
+      {total && (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--text-4)",
+          }}
+        >
+          {total}
+        </span>
+      )}
+    </div>
+  </div>
+);
+
+const HealthSummary = () => {
+  const items = [
+    { label: "Healthy", count: 3, tone: "healthy", icon: IconShield },
+    { label: "Warning", count: 1, tone: "warn", icon: IconAlert },
+    { label: "Paused", count: 1, tone: "paused", icon: IconPause },
+    { label: "Never run", count: 1, tone: "idle", icon: IconClock },
+  ];
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 10,
+      }}
+    >
+      {items.map((it) => (
+        <div key={it.label} className="card" style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                display: "grid",
+                placeItems: "center",
+                background: "var(--surface-2)",
+                color:
+                  it.tone === "healthy"
+                    ? "var(--accent)"
+                    : it.tone === "warn"
+                    ? "var(--warn)"
+                    : "var(--text-3)",
+              }}
+            >
+              <it.icon size={15} />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 20,
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  letterSpacing: "-0.02em",
+                }}
               >
-                Cancel
+                {it.count}
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--text-3)",
+                  marginTop: 4,
+                }}
+              >
+                {it.label}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ProfileCard = ({ p }: { p: typeof SAMPLE_PROFILES[0] }) => {
+  const BackendIcon = p.backendIcon;
+  const dim = p.status === "paused";
+  return (
+    <div
+      className="card"
+      style={{ opacity: dim ? 0.7 : 1, position: "relative" }}
+    >
+      <div style={{ padding: "16px 18px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <span
+            className={"status-dot " + p.status}
+            style={{ marginTop: 7 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "var(--text)",
+                }}
+              >
+                {p.name}
+              </div>
+              {p.remote && <span className="badge">remote</span>}
+              {p.status === "paused" && (
+                <span className="badge paused">paused</span>
+              )}
+              {p.status === "running" && (
+                <span className="badge info">running</span>
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 4,
+                color: "var(--text-3)",
+                fontSize: 11.5,
+              }}
+            >
+              <BackendIcon size={12} />
+              <span>{p.backend}</span>
+              <span style={{ color: "var(--text-4)" }}>·</span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--text-3)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  minWidth: 0,
+                }}
+              >
+                {p.repo}
+              </span>
+            </div>
+          </div>
+          <button className="btn btn-icon" style={{ width: 24, height: 24 }}>
+            <IconDots size={14} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginBottom: 14,
+          }}
+        >
+          <Meta
+            label="Sources"
+            value={`${p.sources} ${p.sources === 1 ? "path" : "paths"}`}
+          />
+          <Meta label="Schedule" value={p.schedule} />
+          <Meta label="Last run" value={p.lastRun} />
+          <Meta
+            label="Health"
+            value={
+              p.status === "healthy"
+                ? "All good"
+                : p.status === "warn"
+                ? "1 warning"
+                : p.status === "running"
+                ? "Backing up…"
+                : p.status === "paused"
+                ? "Paused"
+                : "—"
+            }
+            tone={p.status}
+          />
+        </div>
+
+        {p.note && (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "flex-start",
+              padding: "8px 10px",
+              background: "var(--warn-soft)",
+              border: "1px solid rgba(251,191,36,0.22)",
+              borderRadius: "var(--r-sm)",
+              color: "var(--warn)",
+              fontSize: 11.5,
+              marginBottom: 12,
+            }}
+          >
+            <IconAlert size={12} style={{ marginTop: 1, flexShrink: 0 }} />
+            <span>{p.note}</span>
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <button className="btn btn-sm">
+            {p.status === "paused" ? (
+              <IconPlay size={11} />
+            ) : (
+              <IconPause size={11} />
+            )}
+            {p.status === "paused" ? "Resume" : "Pause"}
+          </button>
+          <button className="btn btn-sm">
+            <IconCamera size={11} /> Snapshots
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={p.status === "running"}
+          >
+            <IconPlay size={11} /> Run now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Meta = ({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+}) => (
+  <div>
+    <div
+      style={{
+        fontSize: 10.5,
+        color: "var(--text-4)",
+        textTransform: "uppercase",
+        letterSpacing: "0.06em",
+        fontWeight: 500,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        marginTop: 3,
+        fontSize: 12.5,
+        color:
+          tone === "warn"
+            ? "var(--warn)"
+            : tone === "healthy"
+            ? "var(--accent)"
+            : "var(--text-2)",
+        fontWeight: 500,
+      }}
+    >
+      {value}
+    </div>
+  </div>
+);
+
+export default function Dashboard() {
+  return (
+    <>
+      <TopBar
+        title="Dashboard"
+        sub="6 profiles · 1 currently backing up"
+        actions={
+          <>
+            <button className="btn btn-icon">
+              <IconBell size={14} />
+            </button>
+            <button className="btn btn-icon">
+              <IconRefresh size={14} />
+            </button>
+            <button className="btn btn-primary">
+              <IconPlus size={12} /> New profile
+            </button>
+          </>
+        }
+      />
+      <div className="v-body">
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 18,
+            maxWidth: 1180,
+          }}
+        >
+          <ActiveBackupCard />
+          <HealthSummary />
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 4,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text-2)",
+              }}
+            >
+              All profiles
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-sm btn-ghost">
+                <IconFilter size={11} /> Filter
               </button>
             </div>
           </div>
-          <ProgressBar percent={activeRun.percentDone} />
-          <div className="flex flex-wrap gap-4 mt-3 text-xs text-text-muted">
-            <span>
-              {activeRun.filesDone.toLocaleString()} / {activeRun.totalFiles.toLocaleString()} files
-            </span>
-            <span>
-              {formatBytes(activeRun.bytesDone)} / {formatBytes(activeRun.totalBytes)}
-            </span>
-            {activeRun.secondsRemaining > 0 && (
-              <span>~{formatDuration(activeRun.secondsRemaining)} remaining</span>
-            )}
-            {activeRun.errorCount > 0 && (
-              <span className="text-warning">{activeRun.errorCount} errors</span>
-            )}
-          </div>
-          {activeRun.currentFiles.length > 0 && (
-            <p className="mt-2 text-xs text-text-muted font-mono truncate">
-              {activeRun.currentFiles[0]}
-            </p>
-          )}
-        </div>
-      )}
 
-      {/* Completed summary */}
-      {activeRun?.completed && (
-        <div
-          className={`mb-6 p-4 rounded-lg text-sm border ${
-            activeRun.exitCode === 0
-              ? "bg-success/10 border-success/30 text-success"
-              : "bg-error/10 border-error/30 text-error"
-          }`}
-        >
-          {activeRun.exitCode === 0
-            ? `Backup completed — ${activeRun.filesNew} new files, ${formatBytes(activeRun.dataAdded)} added`
-            : `Backup failed (exit code ${activeRun.exitCode})`}
-        </div>
-      )}
-
-      {/* Profile cards */}
-      {profiles.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-text-muted text-lg mb-2">
-            No backup profiles configured
-          </p>
-          <p className="text-text-muted text-sm mb-6">
-            Create a profile to start backing up your data
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => navigate("/wizard")}
-              className="px-6 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
-            >
-              Setup Wizard
-            </button>
-            <button
-              onClick={() => navigate("/profiles/new")}
-              className="px-6 py-3 border border-border rounded-lg font-medium hover:bg-bg-tertiary transition-colors"
-            >
-              Manual Setup
-            </button>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+            }}
+          >
+            {SAMPLE_PROFILES.map((p) => (
+              <ProfileCard key={p.name} p={p} />
+            ))}
           </div>
         </div>
-      ) : (
-        <div className="grid gap-3">
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className={`p-5 bg-bg-secondary border border-border rounded-lg hover:border-accent/40 transition-colors ${profile.paused ? "opacity-70" : ""}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <StatusBadge profile={profile} />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => navigate(`/profiles/${profile.id}`)}
-                        className="text-base font-medium hover:text-accent transition-colors text-left"
-                      >
-                        {profile.name}
-                      </button>
-                      {profile.is_remote && (
-                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-accent/20 text-accent uppercase">
-                          remote
-                        </span>
-                      )}
-                      {profile.paused && (
-                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-text-muted/20 text-text-muted uppercase">
-                          paused
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-text-muted truncate">
-                      {profile.repo_url}
-                    </p>
-                    <div className="flex gap-4 mt-1.5 text-xs text-text-muted">
-                      <span>
-                        {profile.source_count} source{profile.source_count !== 1 ? "s" : ""}
-                      </span>
-                      <span>
-                        {profile.has_schedule ? "Scheduled" : "Manual"}
-                      </span>
-                      {profile.last_run_at && (
-                        <span>{timeAgo(profile.last_run_at)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2 ml-4">
-                  <button
-                    onClick={() => handleTogglePause(profile.id)}
-                    className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-bg-tertiary transition-colors"
-                    title={profile.paused ? "Resume profile" : "Pause profile"}
-                  >
-                    {profile.paused ? "Resume" : "Pause"}
-                  </button>
-                  <button
-                    onClick={() => navigate(`/snapshots/${profile.id}`)}
-                    className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-bg-tertiary transition-colors"
-                  >
-                    Snapshots
-                  </button>
-                  <button
-                    onClick={() => handleRunBackup(profile.id)}
-                    disabled={(activeRun !== null && !activeRun.completed) || profile.paused}
-                    className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-lg transition-colors"
-                  >
-                    Run Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
