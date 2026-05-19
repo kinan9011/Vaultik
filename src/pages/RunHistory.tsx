@@ -1,4 +1,8 @@
+import { useEffect, useState } from "react";
 import { TopBar } from "../components/Shell";
+import { useAppStore } from "../store";
+import { getRunHistory } from "../lib/tauri";
+import { RunRecord } from "../lib/types";
 import {
   IconCheck,
   IconAlert,
@@ -14,88 +18,6 @@ import {
   IconTrash,
 } from "../components/Icons";
 
-const RUNS = [
-  {
-    status: "running",
-    profile: "Home Documents",
-    op: "backup",
-    trigger: "manual",
-    started: "Today, 14:26",
-    duration: "Running…",
-    expanded: true,
-    details: { files: "14,523 / 21,890", added: "318 MB", changed: "642", new: "84" },
-  },
-  {
-    status: "success",
-    profile: "Photos Library",
-    op: "backup",
-    trigger: "scheduled",
-    started: "Today, 12:00",
-    duration: "8m 14s",
-    details: { files: "412,008", added: "12 MB", changed: "4", new: "12" },
-  },
-  {
-    status: "success",
-    profile: "Production DB Server",
-    op: "check",
-    trigger: "scheduled",
-    started: "Today, 11:30",
-    duration: "2m 41s",
-  },
-  {
-    status: "warn",
-    profile: "Workstation Projects",
-    op: "backup",
-    trigger: "scheduled",
-    started: "Today, 09:04",
-    duration: "12m 06s",
-    note: "3 files skipped (permission denied)",
-  },
-  {
-    status: "success",
-    profile: "Production DB Server",
-    op: "backup",
-    trigger: "scheduled",
-    started: "Today, 09:00",
-    duration: "1m 38s",
-  },
-  {
-    status: "success",
-    profile: "Home Documents",
-    op: "restore",
-    trigger: "manual",
-    started: "Yesterday, 17:42",
-    duration: "3m 22s",
-    note: "Restored 142 files to /tmp/restore-may-18",
-  },
-  {
-    status: "fail",
-    profile: "Workstation Projects",
-    op: "backup",
-    trigger: "scheduled",
-    started: "Yesterday, 18:00",
-    duration: "0m 04s",
-    note: "Failed: repository is locked (held by PID 4128 on db-01)",
-  },
-  {
-    status: "success",
-    profile: "Production DB Server",
-    op: "forget",
-    trigger: "scheduled",
-    started: "Yesterday, 03:00",
-    duration: "0m 12s",
-    note: "Removed 2 snapshots · pruned 384 MB",
-  },
-  {
-    status: "success",
-    profile: "Photos Library",
-    op: "backup",
-    trigger: "scheduled",
-    started: "May 17, 03:00",
-    duration: "11m 02s",
-  },
-];
-
 const STATUS_MAP: Record<string, any> = {
   running: { label: "running", color: "var(--info)", bg: "var(--info-soft)", border: "rgba(96,165,250,0.32)", icon: IconRefresh },
   success: { label: "success", color: "var(--accent)", bg: "var(--accent-soft)", border: "var(--accent-line)", icon: IconCheck },
@@ -110,9 +32,24 @@ const OP_ICON: Record<string, any> = {
   forget: IconTrash,
 };
 
-const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
-  const s = STATUS_MAP[r.status];
-  const Op = OP_ICON[r.op];
+const RunRow = ({ r, profileName }: { r: RunRecord, profileName: string }) => {
+  const [expanded, setExpanded] = useState(false);
+  const status = r.finished_at === null ? "running" : r.exit_code === 0 ? "success" : r.exit_code === 3 ? "warn" : "fail";
+  const s = STATUS_MAP[status];
+  const Op = OP_ICON[r.operation] || IconPlay;
+  
+  // Try to parse summary / errors
+  let details: any = null;
+  let errorList: string[] = [];
+  try {
+    if (r.summary) details = JSON.parse(r.summary);
+  } catch (e) {}
+  try {
+    if (r.errors) errorList = JSON.parse(r.errors);
+  } catch (e) {}
+
+  const note = errorList.length > 0 ? errorList[0] : null;
+
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -137,7 +74,7 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
         >
           <s.icon
             size={10}
-            style={r.status === "running" ? { animation: "spin 1.6s linear infinite" } : undefined}
+            style={status === "running" ? { animation: "spin 1.6s linear infinite" } : undefined}
           />
           {s.label}
         </div>
@@ -145,10 +82,10 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
           <Op size={13} style={{ color: "var(--text-3)" }} />
           <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
-            {r.op[0].toUpperCase() + r.op.slice(1)}
+            {r.operation[0].toUpperCase() + r.operation.slice(1)}
           </span>
           <span style={{ color: "var(--text-4)" }}>·</span>
-          <span style={{ fontSize: 13, color: "var(--text-2)" }}>{r.profile}</span>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>{profileName}</span>
           <span className="badge" style={{ fontSize: 10.5 }}>
             {r.trigger}
           </span>
@@ -162,19 +99,21 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
               color: "var(--text-2)",
             }}
           >
-            {r.duration}
+            {/* calculate duration */
+              r.finished_at ? `${Math.round((new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000)}s` : "Running..."
+            }
           </span>
           <span style={{ fontSize: 11, color: "var(--text-4)", marginTop: 2 }}>
-            {r.started}
+            {new Date(r.started_at).toLocaleString()}
           </span>
         </div>
 
-        <button className="btn btn-icon" style={{ width: 26, height: 26 }}>
-          {r.expanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+        <button className="btn btn-icon" style={{ width: 26, height: 26 }} onClick={() => setExpanded(!expanded)}>
+          {expanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
         </button>
       </div>
 
-      {r.expanded && r.details && (
+      {expanded && details && (
         <div
           style={{
             padding: "12px 18px 16px",
@@ -185,10 +124,10 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
             gap: 18,
           }}
         >
-          <Detail label="Files processed" value={r.details.files} />
-          <Detail label="Data added" value={r.details.added} mono />
-          <Detail label="Changed files" value={r.details.changed} />
-          <Detail label="New files" value={r.details.new} />
+          <Detail label="Files processed" value={String(details.total_files_processed || 0)} />
+          <Detail label="Data added" value={String(details.data_added || 0)} mono />
+          <Detail label="Changed files" value={String(details.files_changed || 0)} />
+          <Detail label="New files" value={String(details.files_new || 0)} />
           <div
             style={{
               gridColumn: "1 / -1",
@@ -198,18 +137,20 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
               gap: 10,
             }}
           >
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--text-3)",
-                padding: "3px 8px",
-                borderRadius: 4,
-                background: "var(--surface-2)",
-              }}
-            >
-              snapshot 8a2f7c1d
-            </span>
+            {r.snapshot_id && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--text-3)",
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  background: "var(--surface-2)",
+                }}
+              >
+                snapshot {r.snapshot_id.slice(0, 8)}
+              </span>
+            )}
             <span style={{ flex: 1 }} />
             <button className="btn btn-sm btn-ghost">
               <IconDownload size={11} /> Export log
@@ -218,28 +159,28 @@ const RunRow = ({ r }: { r: typeof RUNS[0] }) => {
         </div>
       )}
 
-      {!r.expanded && r.note && (
+      {!expanded && note && (
         <div
           style={{
             padding: "10px 18px",
             borderTop: "1px solid var(--border)",
             fontSize: 11.5,
             color:
-              r.status === "fail"
+              status === "fail"
                 ? "var(--danger)"
-                : r.status === "warn"
+                : status === "warn"
                 ? "var(--warn)"
                 : "var(--text-3)",
             fontFamily: "var(--font-mono)",
             background:
-              r.status === "fail"
+              status === "fail"
                 ? "rgba(248,113,113,0.04)"
-                : r.status === "warn"
+                : status === "warn"
                 ? "rgba(251,191,36,0.04)"
                 : "var(--bg-2)",
           }}
         >
-          {r.note}
+          {note}
         </div>
       )}
     </div>
@@ -274,6 +215,27 @@ const Detail = ({ label, value, mono }: { label: string; value: string; mono?: b
 );
 
 export default function RunHistory() {
+  const [runs, setRuns] = useState<RunRecord[]>([]);
+  const { profiles, fetchProfiles } = useAppStore();
+
+  useEffect(() => {
+    fetchProfiles();
+    loadRuns();
+  }, []);
+
+  const loadRuns = async () => {
+    try {
+      const data = await getRunHistory(undefined, 100);
+      setRuns(data);
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const successfulRuns = runs.filter(r => r.exit_code === 0).length;
+  const partialRuns = runs.filter(r => r.exit_code === 3).length;
+  const failedRuns = runs.filter(r => r.exit_code !== 0 && r.exit_code !== 3 && r.finished_at !== null).length;
+
   return (
     <>
       <TopBar
@@ -283,6 +245,9 @@ export default function RunHistory() {
           <>
             <button className="btn">
               <IconDownload size={12} /> Export
+            </button>
+            <button className="btn" onClick={loadRuns}>
+              <IconRefresh size={12} /> Refresh
             </button>
           </>
         }
@@ -332,13 +297,12 @@ export default function RunHistory() {
               marginBottom: 18,
             }}
           >
-            <StatTile label="Total runs" value="142" tone="text" />
-            <StatTile label="Successful" value="134" tone="ok" sub="94.4%" />
-            <StatTile label="Partial / warnings" value="6" tone="warn" />
-            <StatTile label="Failed" value="2" tone="bad" />
+            <StatTile label="Total runs" value={runs.length.toString()} tone="text" />
+            <StatTile label="Successful" value={successfulRuns.toString()} tone="ok" sub={`${runs.length ? ((successfulRuns / runs.length) * 100).toFixed(1) : 0}%`} />
+            <StatTile label="Partial / warnings" value={partialRuns.toString()} tone="warn" />
+            <StatTile label="Failed" value={failedRuns.toString()} tone="bad" />
           </div>
 
-          <DaySep label="Today, May 19" count={4} />
           <div
             style={{
               display: "flex",
@@ -347,31 +311,13 @@ export default function RunHistory() {
               marginBottom: 18,
             }}
           >
-            {RUNS.slice(0, 4).map((r, i) => (
-              <RunRow key={i} r={r} />
-            ))}
+            {runs.length === 0 ? <div style={{padding: 20, color: "var(--text-3)"}}>No runs found in history.</div> : null}
+            {runs.map((r) => {
+               const profileName = profiles.find(p => p.id === r.profile_id)?.name || r.profile_id;
+               return <RunRow key={r.id} r={r} profileName={profileName} />;
+            })}
           </div>
 
-          <DaySep label="Yesterday, May 18" count={3} />
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginBottom: 18,
-            }}
-          >
-            {RUNS.slice(4, 7).map((r, i) => (
-              <RunRow key={i} r={r} />
-            ))}
-          </div>
-
-          <DaySep label="Saturday, May 17" count={2} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {RUNS.slice(7).map((r, i) => (
-              <RunRow key={i} r={r} />
-            ))}
-          </div>
         </div>
       </div>
     </>
@@ -444,28 +390,3 @@ const StatTile = ({
     </div>
   );
 };
-
-const DaySep = ({ label, count }: { label: string; count: number }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 10,
-    }}
-  >
-    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
-      {label}
-    </span>
-    <span
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        color: "var(--text-4)",
-      }}
-    >
-      {count} runs
-    </span>
-    <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
-  </div>
-);
