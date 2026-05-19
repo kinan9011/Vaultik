@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Sidebar } from "./components/Shell";
 import Dashboard from "./pages/Dashboard";
@@ -6,18 +7,23 @@ import SnapshotBrowser from "./pages/SnapshotBrowser";
 import RunHistory from "./pages/RunHistory";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
+import { useAppStore } from "./store";
 
 export default function App() {
-  const SAMPLE_PROFILES = [
-    { name: "Home Documents", status: "running" },
-    { name: "Photos Library", status: "healthy" },
-    { name: "Production DB Server", status: "healthy" },
-    { name: "Workstation Projects", status: "warn" },
-  ];
+  const { profiles, fetchProfiles } = useAppStore();
+
+  useEffect(() => {
+    fetchProfiles();
+  }, [fetchProfiles]);
+
+  const sidebarProfiles = profiles.map(p => ({
+    name: p.name,
+    status: p.paused ? "paused" : p.last_run_exit_code === 0 ? "healthy" : p.last_run_exit_code === null ? "idle" : "warn"
+  }));
 
   return (
     <div className="v-app">
-      <Sidebar profiles={SAMPLE_PROFILES} />
+      <Sidebar profiles={sidebarProfiles} />
       <div className="v-main">
         <Routes>
           <Route path="/" element={<Dashboard />} />
