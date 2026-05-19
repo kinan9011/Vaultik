@@ -1,0 +1,12 @@
+{
+  "granularity": "standard",
+  "project_type": "desktop-app",
+  "tech_stack": [
+    "Tauri v2",
+    "Rust",
+    "React 19",
+    "TypeScript",
+    "Tailwind CSS v4",
+    "Zustand"
+  ]
+}
