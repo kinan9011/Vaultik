@@ -1,4 +1,9 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAppStore } from "../store";
+import { createProfile, initRepo } from "../lib/tauri";
+import { BackupProfile } from "../lib/types";
+import { v4 as uuidv4 } from 'uuid';
 import {
   IconShield,
   IconArrowRight,
@@ -96,6 +101,7 @@ const WizardFrame = ({
   sub,
   onNext,
   onBack,
+  loading = false,
 }: {
   current: number;
   children: React.ReactNode;
@@ -105,6 +111,7 @@ const WizardFrame = ({
   sub: string;
   onNext?: () => void;
   onBack?: () => void;
+  loading?: boolean;
 }) => (
   <>
     <div
@@ -184,13 +191,13 @@ const WizardFrame = ({
             borderTop: "1px solid var(--border)",
           }}
         >
-          <button className="btn" onClick={onBack}>
+          <button className="btn" onClick={onBack} disabled={loading}>
             <IconArrowLeft size={12} /> Back
           </button>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-ghost">Cancel</button>
-            <button className="btn btn-primary btn-lg" onClick={onNext}>
-              {primaryLabel} {React.createElement(primaryIcon, { size: 13 })}
+            <button className="btn btn-ghost" disabled={loading}>Cancel</button>
+            <button className="btn btn-primary btn-lg" onClick={onNext} disabled={loading}>
+              {loading ? "Working..." : primaryLabel} {!loading && React.createElement(primaryIcon, { size: 13 })}
             </button>
           </div>
         </div>
@@ -342,79 +349,130 @@ const WizardStorage = ({ onNext }: { onNext: () => void }) => (
   </WizardFrame>
 );
 
-const WizardReview = ({ onBack }: { onBack: () => void }) => (
-  <WizardFrame
-    current={6}
-    title="Review & create"
-    sub="Confirm your settings. Vaultik will initialize the repository and start your first backup."
-    primaryLabel="Create profile & back up"
-    primaryIcon={IconCheck}
-    onBack={onBack}
-  >
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <ReviewRow
-        icon={IconFolder}
-        label="Profile"
-        value="Production DB Server"
-        sub="2 sources · 3 exclusion patterns"
-      />
+const WizardReview = ({ onBack }: { onBack: () => void }) => {
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { fetchProfiles } = useAppStore();
 
-      <ReviewRow
-        icon={IconServer}
-        label="Storage"
-        value="SFTP · ssh"
-        sub="sftp:ops@db-01.local:/srv/backup/restic"
-      />
+  const handleCreate = async () => {
+    setLoading(true);
+    try {
+      const pId = uuidv4();
+      const profile: BackupProfile = {
+        id: pId,
+        name: "My New Profile",
+        repo_url: "/tmp/vaultik-repo",
+        password_storage: { type: "Keyring", service: "vaultik", account: pId },
+        backend_options: [],
+        sources: ["/home"],
+        excludes: [],
+        exclude_caches: true,
+        exclude_if_present: [],
+        exclude_larger_than: null,
+        one_file_system: false,
+        tags: [],
+        host_override: null,
+        retention: { keep_last: null, keep_hourly: null, keep_daily: null, keep_weekly: null, keep_monthly: null, keep_yearly: null, keep_within: null, keep_tags: [] },
+        auto_prune: true,
+        schedule: null,
+        paused: false,
+        check_after_backup: false,
+        check_read_data_subset: null,
+        compression: null,
+        upload_limit_kib: null,
+        download_limit_kib: null,
+        read_concurrency: null,
+        remote_host: null,
+      };
 
-      <ReviewRow
-        icon={IconKey}
-        label="Security"
-        value="Password set · OS Keyring"
-        sub="Encryption key never leaves your machine"
-      />
+      await initRepo("/tmp/vaultik-repo", "password");
+      await createProfile(profile, "password");
+      await fetchProfiles();
+      navigate("/");
+    } catch(e) {
+      console.error(e);
+      alert("Failed to create profile: " + e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      <ReviewRow
-        icon={IconClock}
-        label="Schedule"
-        value="Hourly · top of the hour"
-        sub="OS-native systemd user timer · notifies on failure"
-      />
-
-      <ReviewRow
-        icon={IconShield}
-        label="Retention"
-        value="Moderate preset"
-        sub="Keep last 5 · 24 hourly · 7 daily · 4 weekly · 6 monthly · auto-prune"
-      />
-    </div>
-
-    <div
-      style={{
-        marginTop: 22,
-        padding: "12px 14px",
-        borderRadius: "var(--r-md)",
-        background: "var(--accent-soft)",
-        border: "1px solid var(--accent-line)",
-        display: "flex",
-        gap: 10,
-        alignItems: "flex-start",
-        color: "var(--text-2)",
-      }}
+  return (
+    <WizardFrame
+      current={6}
+      title="Review & create"
+      sub="Confirm your settings. Vaultik will initialize the repository and start your first backup."
+      primaryLabel="Create profile & back up"
+      primaryIcon={IconCheck}
+      onBack={onBack}
+      onNext={handleCreate}
+      loading={loading}
     >
-      <IconShield
-        size={14}
-        style={{ color: "var(--accent)", marginTop: 1, flexShrink: 0 }}
-      />
-      <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-        <strong style={{ color: "var(--text)", fontWeight: 600 }}>
-          Encrypted before it leaves your machine.
-        </strong>{" "}
-        Restic encrypts data with AES-256 and authenticates with Poly1305 before
-        any upload. Without your password, the repository is unreadable.
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <ReviewRow
+          icon={IconFolder}
+          label="Profile"
+          value="My New Profile"
+          sub="1 source · 0 exclusion patterns"
+        />
+
+        <ReviewRow
+          icon={IconHdd}
+          label="Storage"
+          value="Local"
+          sub="/tmp/vaultik-repo"
+        />
+
+        <ReviewRow
+          icon={IconKey}
+          label="Security"
+          value="Password set · OS Keyring"
+          sub="Encryption key never leaves your machine"
+        />
+
+        <ReviewRow
+          icon={IconClock}
+          label="Schedule"
+          value="Manual"
+          sub="No schedule configured"
+        />
+
+        <ReviewRow
+          icon={IconShield}
+          label="Retention"
+          value="Keep all"
+          sub="Auto-prune enabled"
+        />
       </div>
-    </div>
-  </WizardFrame>
-);
+
+      <div
+        style={{
+          marginTop: 22,
+          padding: "12px 14px",
+          borderRadius: "var(--r-md)",
+          background: "var(--accent-soft)",
+          border: "1px solid var(--accent-line)",
+          display: "flex",
+          gap: 10,
+          alignItems: "flex-start",
+          color: "var(--text-2)",
+        }}
+      >
+        <IconShield
+          size={14}
+          style={{ color: "var(--accent)", marginTop: 1, flexShrink: 0 }}
+        />
+        <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+          <strong style={{ color: "var(--text)", fontWeight: 600 }}>
+            Encrypted before it leaves your machine.
+          </strong>{" "}
+          Restic encrypts data with AES-256 and authenticates with Poly1305 before
+          any upload. Without your password, the repository is unreadable.
+        </div>
+      </div>
+    </WizardFrame>
+  );
+};
 
 const ReviewRow = ({
   icon: Icon,
