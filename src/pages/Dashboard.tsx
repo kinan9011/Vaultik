@@ -1,278 +1,219 @@
+import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/Shell";
+import { useAppStore } from "../store";
+import { togglePause, runBackup } from "../lib/tauri";
 import {
   IconPlus,
   IconPlay,
   IconPause,
-  IconStop,
   IconCamera,
   IconDots,
   IconShield,
   IconClock,
-  IconAlert,
   IconHdd,
-  IconCloud,
   IconServer,
   IconBell,
   IconRefresh,
   IconFilter,
 } from "../components/Icons";
 
-const SAMPLE_PROFILES = [
-  {
-    name: "Home Documents",
-    status: "running",
-    backendIcon: IconHdd,
-    backend: "Local",
-    repo: "/mnt/backup/home-repo",
-    sources: 3,
-    schedule: "Daily · 02:00",
-    lastRun: "Running now",
-    note: "",
-    remote: false,
-  },
-  {
-    name: "Photos Library",
-    status: "healthy",
-    backendIcon: IconCloud,
-    backend: "Backblaze B2",
-    repo: "b2:photos-cold:family",
-    sources: 1,
-    schedule: "Weekly · Sun 03:00",
-    lastRun: "2 hours ago",
-    note: "",
-    remote: false,
-  },
-  {
-    name: "Production DB Server",
-    status: "healthy",
-    backendIcon: IconServer,
-    backend: "SFTP · ssh",
-    repo: "sftp:ops@db-01:/srv/restic",
-    sources: 2,
-    schedule: "Hourly",
-    lastRun: "23 min ago",
-    remote: true,
-    note: "",
-  },
-  {
-    name: "Workstation Projects",
-    status: "warn",
-    backendIcon: IconCloud,
-    backend: "S3",
-    repo: "s3:s3.amazonaws.com/work-snaps",
-    sources: 4,
-    schedule: "Daily · 18:00",
-    lastRun: "Yesterday, 18:04",
-    note: "3 files skipped (permission denied)",
-    remote: false,
-  },
-  {
-    name: "Old Laptop Archive",
-    status: "paused",
-    backendIcon: IconHdd,
-    backend: "Local",
-    repo: "/mnt/archive/laptop",
-    sources: 2,
-    schedule: "Paused",
-    lastRun: "5 days ago",
-    note: "",
-    remote: false,
-  },
-  {
-    name: "Music & Media",
-    status: "idle",
-    backendIcon: IconCloud,
-    backend: "rclone",
-    repo: "rclone:gdrive:media-backup",
-    sources: 1,
-    schedule: "Not scheduled",
-    lastRun: "Never run",
-    note: "",
-    remote: false,
-  },
-];
+const ProfileCard = ({ p, onUpdate }: { p: any, onUpdate: () => void }) => {
+  const BackendIcon = p.is_remote ? IconServer : IconHdd;
+  const dim = p.paused;
+  const status = p.paused ? "paused" : p.last_run_exit_code === 0 ? "healthy" : p.last_run_exit_code === null ? "idle" : "warn";
+  const navigate = useNavigate();
 
-const ActiveBackupCard = () => (
-  <div
-    className="card"
-    style={{
-      background:
-        "linear-gradient(180deg, rgba(96,165,250,0.08) 0%, var(--surface) 60%)",
-      borderColor: "rgba(96,165,250,0.25)",
-    }}
-  >
-    <div style={{ padding: "18px 22px 14px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
+  const handleTogglePause = async () => {
+    try {
+      await togglePause(p.id);
+      onUpdate();
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const handleRunBackup = async () => {
+    try {
+      await runBackup(p.id);
+      onUpdate();
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div
+      className="card"
+      style={{ opacity: dim ? 0.7 : 1, position: "relative" }}
+    >
+      <div style={{ padding: "16px 18px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <span
+            className={"status-dot " + status}
+            style={{ marginTop: 7 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "var(--text)",
+                }}
+              >
+                {p.name}
+              </div>
+              {p.is_remote && <span className="badge">remote</span>}
+              {p.paused && (
+                <span className="badge paused">paused</span>
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 4,
+                color: "var(--text-3)",
+                fontSize: 11.5,
+              }}
+            >
+              <BackendIcon size={12} />
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--text-3)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  minWidth: 0,
+                }}
+              >
+                {p.repo_url}
+              </span>
+            </div>
+          </div>
+          <button className="btn btn-icon" style={{ width: 24, height: 24 }} onClick={() => navigate(`/profiles/${p.id}`)}>
+            <IconDots size={14} />
+          </button>
+        </div>
+
         <div
           style={{
             display: "grid",
-            placeItems: "center",
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            background: "rgba(96,165,250,0.14)",
-            border: "1px solid rgba(96,165,250,0.28)",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginBottom: 14,
           }}
         >
-          <IconRefresh
-            size={16}
-            style={{
-              color: "var(--info)",
-              animation: "spin 2.4s linear infinite",
-            }}
+          <Meta
+            label="Sources"
+            value={`${p.source_count} paths`}
+          />
+          <Meta label="Schedule" value={p.has_schedule ? "Active" : "None"} />
+          <Meta label="Last run" value={p.last_run_at ? new Date(p.last_run_at).toLocaleString() : "Never"} />
+          <Meta
+            label="Health"
+            value={status}
+            tone={status}
           />
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Home Documents</div>
-            <span className="badge info">backing up</span>
-          </div>
-          <div style={{ color: "var(--text-3)", fontSize: 12, marginTop: 2 }}>
-            Started 4 min ago · estimated 2m 14s remaining
-          </div>
-        </div>
-        <button className="btn btn-sm">
-          <IconStop size={12} /> Cancel
-        </button>
-      </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 8,
-        }}
-      >
-        <div className="bar" style={{ flex: 1, height: 8 }}>
-          <div className="bar-fill" style={{ width: "67%" }} />
-        </div>
         <div
           style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            color: "var(--text)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border)",
           }}
         >
-          67%
+          <button className="btn btn-sm" onClick={handleTogglePause}>
+            {p.paused ? (
+              <IconPlay size={11} />
+            ) : (
+              <IconPause size={11} />
+            )}
+            {p.paused ? "Resume" : "Pause"}
+          </button>
+          <button className="btn btn-sm" onClick={() => navigate(`/snapshots/${p.id}`)}>
+            <IconCamera size={11} /> Snapshots
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={handleRunBackup}
+          >
+            <IconPlay size={11} /> Run now
+          </button>
         </div>
       </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 18,
-          marginTop: 14,
-        }}
-      >
-        <Stat label="Files processed" value="14,523" total="/ 21,890" />
-        <Stat label="Data transferred" value="3.2 GB" total="/ 4.8 GB" />
-        <Stat label="Throughput" value="42.6 MB/s" />
-        <Stat label="Errors" value="0" tone="ok" />
-      </div>
-
-      <div
-        style={{
-          marginTop: 14,
-          paddingTop: 14,
-          borderTop: "1px dashed var(--border)",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontFamily: "var(--font-mono)",
-          fontSize: 11.5,
-          color: "var(--text-3)",
-        }}
-      >
-        <span style={{ color: "var(--text-4)" }}>scanning</span>
-        <span
-          style={{
-            color: "var(--text-2)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1,
-          }}
-        >
-          /home/kinan/Documents/projects/vaultik/src-tauri/target/release/build/…/output.rs
-        </span>
-      </div>
     </div>
-  </div>
-);
+  );
+};
 
-const Stat = ({
+const Meta = ({
   label,
   value,
-  total,
   tone,
 }: {
   label: string;
   value: string;
-  total?: string;
   tone?: string;
 }) => (
   <div>
     <div
       style={{
-        fontSize: 11,
-        color: "var(--text-3)",
+        fontSize: 10.5,
+        color: "var(--text-4)",
         textTransform: "uppercase",
-        letterSpacing: "0.04em",
+        letterSpacing: "0.06em",
         fontWeight: 500,
       }}
     >
       {label}
     </div>
     <div
-      style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 4 }}
+      style={{
+        marginTop: 3,
+        fontSize: 12.5,
+        color:
+          tone === "warn"
+            ? "var(--warn)"
+            : tone === "healthy"
+            ? "var(--accent)"
+            : "var(--text-2)",
+        fontWeight: 500,
+      }}
     >
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 18,
-          fontWeight: 500,
-          color: tone === "ok" ? "var(--accent)" : "var(--text)",
-          letterSpacing: "-0.01em",
-        }}
-      >
-        {value}
-      </span>
-      {total && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--text-4)",
-          }}
-        >
-          {total}
-        </span>
-      )}
+      {value}
     </div>
   </div>
 );
 
-const HealthSummary = () => {
+const HealthSummary = ({ profiles }: { profiles: any[] }) => {
+  const healthy = profiles.filter(p => p.last_run_exit_code === 0 && !p.paused).length;
+  const paused = profiles.filter(p => p.paused).length;
+  const never = profiles.filter(p => p.last_run_at === null && !p.paused).length;
+  
   const items = [
-    { label: "Healthy", count: 3, tone: "healthy", icon: IconShield },
-    { label: "Warning", count: 1, tone: "warn", icon: IconAlert },
-    { label: "Paused", count: 1, tone: "paused", icon: IconPause },
-    { label: "Never run", count: 1, tone: "idle", icon: IconClock },
+    { label: "Healthy", count: healthy, tone: "healthy", icon: IconShield },
+    { label: "Paused", count: paused, tone: "paused", icon: IconPause },
+    { label: "Never run", count: never, tone: "idle", icon: IconClock },
   ];
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
+        gridTemplateColumns: `repeat(${items.length}, 1fr)`,
         gap: 10,
       }}
     >
@@ -326,217 +267,24 @@ const HealthSummary = () => {
   );
 };
 
-const ProfileCard = ({ p }: { p: typeof SAMPLE_PROFILES[0] }) => {
-  const BackendIcon = p.backendIcon;
-  const dim = p.status === "paused";
-  return (
-    <div
-      className="card"
-      style={{ opacity: dim ? 0.7 : 1, position: "relative" }}
-    >
-      <div style={{ padding: "16px 18px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-            marginBottom: 12,
-          }}
-        >
-          <span
-            className={"status-dot " + p.status}
-            style={{ marginTop: 7 }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div
-                style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: "var(--text)",
-                }}
-              >
-                {p.name}
-              </div>
-              {p.remote && <span className="badge">remote</span>}
-              {p.status === "paused" && (
-                <span className="badge paused">paused</span>
-              )}
-              {p.status === "running" && (
-                <span className="badge info">running</span>
-              )}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginTop: 4,
-                color: "var(--text-3)",
-                fontSize: 11.5,
-              }}
-            >
-              <BackendIcon size={12} />
-              <span>{p.backend}</span>
-              <span style={{ color: "var(--text-4)" }}>·</span>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--text-3)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  minWidth: 0,
-                }}
-              >
-                {p.repo}
-              </span>
-            </div>
-          </div>
-          <button className="btn btn-icon" style={{ width: 24, height: 24 }}>
-            <IconDots size={14} />
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            marginBottom: 14,
-          }}
-        >
-          <Meta
-            label="Sources"
-            value={`${p.sources} ${p.sources === 1 ? "path" : "paths"}`}
-          />
-          <Meta label="Schedule" value={p.schedule} />
-          <Meta label="Last run" value={p.lastRun} />
-          <Meta
-            label="Health"
-            value={
-              p.status === "healthy"
-                ? "All good"
-                : p.status === "warn"
-                ? "1 warning"
-                : p.status === "running"
-                ? "Backing up…"
-                : p.status === "paused"
-                ? "Paused"
-                : "—"
-            }
-            tone={p.status}
-          />
-        </div>
-
-        {p.note && (
-          <div
-            style={{
-              display: "flex",
-              gap: 6,
-              alignItems: "flex-start",
-              padding: "8px 10px",
-              background: "var(--warn-soft)",
-              border: "1px solid rgba(251,191,36,0.22)",
-              borderRadius: "var(--r-sm)",
-              color: "var(--warn)",
-              fontSize: 11.5,
-              marginBottom: 12,
-            }}
-          >
-            <IconAlert size={12} style={{ marginTop: 1, flexShrink: 0 }} />
-            <span>{p.note}</span>
-          </div>
-        )}
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            paddingTop: 12,
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-          <button className="btn btn-sm">
-            {p.status === "paused" ? (
-              <IconPlay size={11} />
-            ) : (
-              <IconPause size={11} />
-            )}
-            {p.status === "paused" ? "Resume" : "Pause"}
-          </button>
-          <button className="btn btn-sm">
-            <IconCamera size={11} /> Snapshots
-          </button>
-          <div style={{ flex: 1 }} />
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={p.status === "running"}
-          >
-            <IconPlay size={11} /> Run now
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const Meta = ({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) => (
-  <div>
-    <div
-      style={{
-        fontSize: 10.5,
-        color: "var(--text-4)",
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        fontWeight: 500,
-      }}
-    >
-      {label}
-    </div>
-    <div
-      style={{
-        marginTop: 3,
-        fontSize: 12.5,
-        color:
-          tone === "warn"
-            ? "var(--warn)"
-            : tone === "healthy"
-            ? "var(--accent)"
-            : "var(--text-2)",
-        fontWeight: 500,
-      }}
-    >
-      {value}
-    </div>
-  </div>
-);
-
 export default function Dashboard() {
+  const { profiles, fetchProfiles } = useAppStore();
+  const navigate = useNavigate();
+
   return (
     <>
       <TopBar
         title="Dashboard"
-        sub="6 profiles · 1 currently backing up"
+        sub={`${profiles.length} profiles loaded`}
         actions={
           <>
             <button className="btn btn-icon">
               <IconBell size={14} />
             </button>
-            <button className="btn btn-icon">
+            <button className="btn btn-icon" onClick={fetchProfiles}>
               <IconRefresh size={14} />
             </button>
-            <button className="btn btn-primary">
+            <button className="btn btn-primary" onClick={() => navigate('/wizard')}>
               <IconPlus size={12} /> New profile
             </button>
           </>
@@ -551,8 +299,8 @@ export default function Dashboard() {
             maxWidth: 1180,
           }}
         >
-          <ActiveBackupCard />
-          <HealthSummary />
+          
+          <HealthSummary profiles={profiles} />
 
           <div
             style={{
@@ -578,17 +326,23 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-            }}
-          >
-            {SAMPLE_PROFILES.map((p) => (
-              <ProfileCard key={p.name} p={p} />
-            ))}
-          </div>
+          {profiles.length === 0 ? (
+             <div style={{ textAlign: "center", padding: "40px", color: "var(--text-3)" }}>
+               No profiles yet. Create one to get started.
+             </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
+            >
+              {profiles.map((p) => (
+                <ProfileCard key={p.id} p={p} onUpdate={fetchProfiles} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>
