@@ -32,6 +32,7 @@ interface AppState {
   addLog: (log: string) => void;
   addError: (error: string) => void;
   setRunState: (state: RunState) => void;
+  setActiveProfileId: (profileId: string | null) => void;
   clearRun: () => void;
 }
 
@@ -73,10 +74,11 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ errors: [...state.errors, error] })),
   setRunState: (runState) => 
     set({ runState }),
+  setActiveProfileId: (profileId) => 
+    set({ activeProfileId: profileId }),
   clearRun: () => 
     set({ 
       activeRunId: null, 
-      activeProfileId: null, 
       runState: 'idle', 
       progressStats: {}, 
       logs: [], 

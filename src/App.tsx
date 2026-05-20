@@ -11,21 +11,16 @@ import { useAppStore } from "./store";
 import { useBackupManager } from "./hooks/useBackupManager";
 
 export default function App() {
-  const { profiles, fetchProfiles } = useAppStore();
+  const { fetchProfiles } = useAppStore();
   useBackupManager();
 
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
 
-  const sidebarProfiles = profiles.map(p => ({
-    name: p.name,
-    status: p.paused ? "paused" : p.last_run_exit_code === 0 ? "healthy" : p.last_run_exit_code === null ? "idle" : "warn"
-  }));
-
   return (
     <div className="v-app">
-      <Sidebar profiles={sidebarProfiles} />
+      <Sidebar />
       <div className="v-main">
         <Routes>
           <Route path="/" element={<Dashboard />} />

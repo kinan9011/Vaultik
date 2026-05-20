@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAppStore } from '../store';
 import {
-  IconHome, IconHistory, IconSettings, VaultikLogo
+  IconHome, IconHistory, IconSettings, VaultikLogo, IconChevronDown
 } from './Icons';
 
-export const Sidebar = ({ profiles = [] }: { profiles?: { name: string, status: string }[] }) => {
+export const Sidebar = () => {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
+  const { profiles, activeProfileId, setActiveProfileId, runState } = useAppStore();
 
   return (
     <aside className="v-side">
@@ -14,6 +16,30 @@ export const Sidebar = ({ profiles = [] }: { profiles?: { name: string, status: 
         <div className="v-brand-mark"><VaultikLogo size={18} /></div>
         <div className="v-brand-name">Vaultik</div>
         <div className="v-brand-tag">v0.1.0</div>
+      </div>
+
+      <div style={{ padding: '0 10px 10px' }}>
+        <div className="field relative">
+          <select
+            className="select"
+            value={activeProfileId || ''}
+            onChange={(e) => setActiveProfileId(e.target.value || null)}
+            disabled={runState === 'running'}
+            style={{ 
+              appearance: 'none', 
+              cursor: runState === 'running' ? 'not-allowed' : 'pointer',
+              opacity: runState === 'running' ? 0.6 : 1 
+            }}
+          >
+            <option value="">-- Select Profile --</option>
+            {profiles.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+            <IconChevronDown size={14} className="text-text-4" />
+          </div>
+        </div>
       </div>
 
       <nav className="v-nav">
@@ -37,14 +63,15 @@ export const Sidebar = ({ profiles = [] }: { profiles?: { name: string, status: 
           <div className="v-section-label">Profiles</div>
           <nav className="v-nav">
             {profiles.map((p) => {
-              const active = isActive(`/profiles/${p.name}`) || isActive(`/snapshots/${p.name}`);
+              const active = isActive(`/profiles/${p.id}`) || isActive(`/snapshots/${p.id}`);
+              const status = p.paused ? "paused" : p.last_run_exit_code === 0 ? "healthy" : p.last_run_exit_code === null ? "idle" : "warn";
               return (
                 <NavLink
-                  to={`/profiles/${p.name}`}
-                  key={p.name}
+                  to={`/profiles/${p.id}`}
+                  key={p.id}
                   className={"v-nav-item" + (active ? " active" : "")}
                 >
-                  <span className={`status-dot ${p.status}`} style={{ width: 7, height: 7 }} />
+                  <span className={`status-dot ${status}`} style={{ width: 7, height: 7 }} />
                   <span style={{
                     overflow: "hidden",
                     textOverflow: "ellipsis",
