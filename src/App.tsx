@@ -8,9 +8,11 @@ import RunHistory from "./pages/RunHistory";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
 import { useAppStore } from "./store";
+import { useBackupManager } from "./hooks/useBackupManager";
 
 export default function App() {
   const { profiles, fetchProfiles } = useAppStore();
+  useBackupManager();
 
   useEffect(() => {
     fetchProfiles();
