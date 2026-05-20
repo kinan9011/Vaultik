@@ -1,5 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/Shell";
+import { ActiveRunView } from "../components/ActiveRunView";
+import { ErrorBanner } from "../components/ErrorBanner";
 import { useAppStore } from "../store";
 import { togglePause, runBackup } from "../lib/tauri";
 import {
@@ -22,6 +24,7 @@ const ProfileCard = ({ p, onUpdate }: { p: any, onUpdate: () => void }) => {
   const dim = p.paused;
   const status = p.paused ? "paused" : p.last_run_exit_code === 0 ? "healthy" : p.last_run_exit_code === null ? "idle" : "warn";
   const navigate = useNavigate();
+  const { startRun, runState } = useAppStore();
 
   const handleTogglePause = async () => {
     try {
@@ -34,7 +37,8 @@ const ProfileCard = ({ p, onUpdate }: { p: any, onUpdate: () => void }) => {
 
   const handleRunBackup = async () => {
     try {
-      await runBackup(p.id);
+      const runId = await runBackup(p.id);
+      startRun(runId, p.id);
       onUpdate();
     } catch(e) {
       console.error(e);
@@ -151,6 +155,8 @@ const ProfileCard = ({ p, onUpdate }: { p: any, onUpdate: () => void }) => {
           <button
             className="btn btn-sm btn-primary"
             onClick={handleRunBackup}
+            disabled={runState === 'running'}
+            style={{ opacity: runState === 'running' ? 0.5 : 1, cursor: runState === 'running' ? 'not-allowed' : 'pointer' }}
           >
             <IconPlay size={11} /> Run now
           </button>
@@ -299,6 +305,8 @@ export default function Dashboard() {
             maxWidth: 1180,
           }}
         >
+          <ErrorBanner />
+          <ActiveRunView />
           
           <HealthSummary profiles={profiles} />
 
