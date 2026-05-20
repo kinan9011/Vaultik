@@ -214,6 +214,10 @@ impl ResticCommand {
         cmd
     }
 
+    pub fn unlock(profile: &BackupProfile) -> Self {
+        Self::new("unlock").with_profile(profile)
+    }
+
     pub fn init(repo_url: &str) -> Self {
         Self::new("init")
             .arg("--repo")

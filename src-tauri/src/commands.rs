@@ -517,6 +517,28 @@ pub async fn run_check(
     Ok(stdout)
 }
 
+#[tauri::command]
+pub async fn unlock_repo(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<String, String> {
+    let uuid = Uuid::parse_str(&profile_id).map_err(|e| format!("Invalid profile ID: {e}"))?;
+    let profile = state.profiles.get(uuid)?;
+    let password = resolve_profile_password(&profile)?;
+
+    let (args, env) = ResticCommand::unlock(&profile)
+        .with_password(&password)
+        .build();
+
+    let executor = get_executor(&profile, &state.cancel_registry);
+    let (stdout, _) = executor
+        .run_to_completion(args, env)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(stdout)
+}
+
 // ── Pause/Resume commands ────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -109,6 +109,10 @@ export async function runCheck(
   return invoke("run_check", { profileId, readDataSubset });
 }
 
+export async function unlockRepo(profileId: string): Promise<string> {
+  return invoke("unlock_repo", { profileId });
+}
+
 // ── Pause/Resume commands ─────────────────────────────────────────
 
 export async function togglePause(profileId: string): Promise<boolean> {

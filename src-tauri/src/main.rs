@@ -36,6 +36,7 @@ fn main() {
             commands::run_restore,
             commands::forget_snapshots,
             commands::run_check,
+            commands::unlock_repo,
             commands::toggle_pause,
             commands::get_run_history,
             commands::get_restic_version,
