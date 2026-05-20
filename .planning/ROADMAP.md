@@ -17,7 +17,10 @@
   1. User can switch between multiple backup profiles.
   2. User sees a responsive progress bar and stats during an active backup run.
   3. User is presented with clear, actionable error messages if a backup fails.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 01-01-PLAN.md — Global State & Backend Unlock
+- [ ] 01-02-PLAN.md — Progress UI & Error Banner
+- [ ] 01-03-PLAN.md — Profile Selector & Safety
 **UI hint**: yes
 
 ### Phase 2: Snapshot Browsing & Restore
@@ -65,7 +68,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Robust Core & Progress | 0/0 | Not started | - |
+| 1. Robust Core & Progress | 0/3 | Planned | - |
 | 2. Snapshot Browsing & Restore | 0/0 | Not started | - |
 | 3. Scheduling & Background Execution | 0/0 | Not started | - |
 | 4. Global Settings & Configuration | 0/0 | Not started | - |
