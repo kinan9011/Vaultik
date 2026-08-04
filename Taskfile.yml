@@ -1,0 +1,261 @@
+version: "3"
+
+vars:
+  TAURI_DIR: src-tauri
+  SERVER_DIR: server
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install:
+    desc: Install Node dependencies
+    cmds:
+      - npm install
+
+  dev:
+    desc: Start the Vite frontend dev server only
+    aliases:
+      - run:frontend
+      - run:web
+    cmds:
+      - npm run dev
+
+  run:dev:
+    desc: Start the Tauri desktop app in development mode
+    aliases:
+      - dev:tauri
+      - tauri:dev
+      - run:tauri
+    cmds:
+      - npm run tauri dev
+
+  run:dev:developer:
+    desc: Start the Tauri app with the developer-mode feature enabled
+    cmds:
+      - DEV_SETTINGS_PASSWORD="${DEV_SETTINGS_PASSWORD:?Set DEV_SETTINGS_PASSWORD first}" npm run tauri dev -- --features developer-mode
+
+  preview:
+    desc: Preview the production frontend build
+    aliases:
+      - run:preview
+    cmds:
+      - npm run preview
+
+  build:
+    desc: Build the full Tauri desktop app
+    aliases:
+      - build:tauri
+      - tauri:build
+    cmds:
+      - npm run tauri build
+
+  build:developer:
+    desc: Build the Tauri app with the developer-mode feature enabled
+    cmds:
+      - npm run tauri build -- --features developer-mode
+
+  build:rust:developer:
+    desc: Build the Rust backend crate with developer-mode enabled
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo build --features developer-mode
+
+  build:frontend:
+    desc: Build the Vite frontend only
+    aliases:
+      - build:web
+    cmds:
+      - npm run build
+
+  build:rust:
+    desc: Build the Rust backend crate
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo build
+
+  check:
+    desc: Run standard non-interactive project checks
+    cmds:
+      - task: check:frontend
+      - task: check:rust
+      - task: server:check
+
+  check:frontend:
+    desc: Run the frontend build check
+    cmds:
+      - npm run build
+
+  check:rust:
+    desc: Run cargo check for the Rust backend
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo check
+
+  check:developer:
+    desc: Run cargo check with developer-mode enabled
+    aliases:
+      - check:rust:developer
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo check --features developer-mode
+
+  test:
+    desc: Run all automated tests
+    cmds:
+      - task: test:frontend
+      - task: test:rust
+      - task: server:test
+
+  test:frontend:
+    desc: Run frontend tests, passing when no tests exist yet
+    cmds:
+      - npx vitest run --passWithNoTests
+
+  test:rust:
+    desc: Run Rust backend tests
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo test
+
+  test:developer:
+    desc: Run Rust backend tests with developer-mode enabled
+    aliases:
+      - test:rust:developer
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo test --features developer-mode
+
+  lint:
+    desc: Run Rust clippy for all crates
+    cmds:
+      - task: lint:rust
+      - task: server:lint
+
+  lint:rust:
+    desc: Run cargo clippy for all Rust targets and features
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo clippy --all-targets --all-features
+
+  fmt:
+    desc: Format Rust code for all crates
+    aliases:
+      - format
+    cmds:
+      - task: fmt:rust
+      - task: server:fmt
+
+  fmt:rust:
+    desc: Format the Rust backend crate
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo fmt
+
+  verify:
+    desc: Run build, Rust check, and Rust tests
+    cmds:
+      - task: check
+      - task: test:rust
+
+  verify:phase1:
+    desc: Run the non-interactive Phase 1 verification commands
+    cmds:
+      - task: check:frontend
+      - task: check:rust
+      - 'echo "Interactive verification remains: task run:dev"'
+
+  tauri:
+    desc: Run the Tauri CLI, passing extra args after --
+    cmds:
+      - npm run tauri -- {{.CLI_ARGS}}
+
+  cargo:
+    desc: Run Cargo in src-tauri, passing extra args after --
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo {{.CLI_ARGS}}
+
+  # Server tasks
+  server:run:
+    desc: Run the Timora server in development mode
+    aliases:
+      - run:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo run
+
+  server:build:
+    desc: Build the Timora server binary
+    aliases:
+      - build:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo build --release
+
+  server:check:
+    desc: Run cargo check for the server
+    aliases:
+      - check:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo check
+
+  server:test:
+    desc: Run server tests
+    aliases:
+      - test:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo test
+
+  server:lint:
+    desc: Run cargo clippy for the server
+    aliases:
+      - lint:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo clippy --all-targets --all-features
+
+  server:fmt:
+    desc: Format server Rust code
+    aliases:
+      - fmt:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo fmt
+
+  server:clean:
+    desc: Remove server build artifacts
+    aliases:
+      - clean:server
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo clean
+
+  server:cargo:
+    desc: Run Cargo in server/, passing extra args after --
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - cargo {{.CLI_ARGS}}
+
+  clean:
+    desc: Remove generated frontend and Rust build artifacts
+    cmds:
+      - task: clean:frontend
+      - task: clean:rust
+      - task: server:clean
+
+  clean:frontend:
+    desc: Remove the Vite dist directory
+    cmds:
+      - rm -rf dist
+
+  clean:rust:
+    desc: Remove Cargo build artifacts
+    dir: "{{.TAURI_DIR}}"
+    cmds:
+      - cargo clean
